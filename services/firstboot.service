@@ -1,0 +1,13 @@
+[Unit]
+Description=LittleFarmers First Boot Setup
+After=NetworkManager.service
+Wants=NetworkManager.service
+ConditionPathExists=!/var/lib/littlefarmers/firstboot-complete
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/littlefarmers-firstboot.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -36,6 +36,15 @@ install -m 0644 \
   "$PROJECT_ROOT/config/system.conf" \
   /etc/littlefarmers/system.conf
 
+install -m 0755 \
+  "$PROJECT_ROOT/scripts/firstboot.sh" \
+  /usr/local/bin/littlefarmers-firstboot.sh
+
+install -m 0644 \
+  "$PROJECT_ROOT/services/firstboot.service" \
+  /etc/systemd/system/firstboot.service
+
+
 systemctl daemon-reload
 
 systemctl enable NetworkManager.service
@@ -43,6 +52,7 @@ systemctl enable avahi-daemon.service
 systemctl enable ssh.service
 systemctl enable zigbee2mqtt.service
 systemctl enable littlefarmers-wifi-fallback.service
+systemctl enable firstboot.service
 
 # WiFi Connect darf nicht dauerhaft laufen.
 systemctl disable --now wifi-connect.service 2>/dev/null || true

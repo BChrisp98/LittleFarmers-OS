@@ -8,7 +8,7 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-VERSION="4.11.84"
+VERSION="4.4.6"
 ARCH="$(dpkg --print-architecture)"
 TMP_DIR="$(mktemp -d)"
 
