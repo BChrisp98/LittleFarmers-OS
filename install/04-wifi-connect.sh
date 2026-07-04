@@ -11,6 +11,7 @@ fi
 VERSION="4.4.6"
 ARCH="$(dpkg --print-architecture)"
 TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
 
 case "$ARCH" in
   arm64)
@@ -42,6 +43,5 @@ install -m 0755 wifi-connect /usr/local/sbin/wifi-connect
 
 /usr/local/sbin/wifi-connect --version
 
-rm -rf "$TMP_DIR"
 
 echo "=== WiFi Connect installiert ==="
