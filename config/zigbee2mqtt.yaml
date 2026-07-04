@@ -1,0 +1,19 @@
+version: 5
+
+mqtt:
+  base_topic: zigbee2mqtt
+  server: mqtt://63.178.68.2:1883
+
+frontend:
+  enabled: true
+  port: 8080
+  host: 0.0.0.0
+
+advanced:
+  log_level: info
+  network_key: GENERATE
+  pan_id: GENERATE
+  ext_pan_id: GENERATE
+
+homeassistant:
+  enabled: false

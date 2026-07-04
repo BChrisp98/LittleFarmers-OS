@@ -1,0 +1,16 @@
+[Unit]
+Description=Zigbee2MQTT
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=littlefarmers
+WorkingDirectory=/opt/zigbee2mqtt
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node index.js
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

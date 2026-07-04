@@ -1,0 +1,13 @@
+[Unit]
+Description=LittleFarmers WiFi Fallback
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/littlefarmers-wifi-fallback.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
