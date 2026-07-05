@@ -30,6 +30,9 @@ install -m 0644 \
   "$PROJECT_ROOT/config/zigbee2mqtt.yaml" \
   /opt/zigbee2mqtt/data/configuration.yaml
 
+# Zigbee2MQTT muss seine Konfiguration und Daten verändern können.
+chown -R littlefarmers:littlefarmers /opt/zigbee2mqtt
+
 mkdir -p /etc/littlefarmers
 
 install -m 0644 \
