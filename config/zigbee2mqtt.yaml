@@ -2,13 +2,11 @@ version: 5
 
 mqtt:
   base_topic: zigbee2mqtt
-  # WARNING (2026-07-25): this IP is still just the EC2 instance's dynamic
-  # public IP, NOT an Elastic IP. It already changed once (from
-  # 63.178.68.2) after an instance restart, which silently broke every
-  # already-provisioned device pointing at the old address. Until an
-  # Elastic IP is attached to the instance, this will happen again on the
-  # next restart. See Vendor-Liste.md.
-  server: mqtt://18.193.124.166:1883
+  # FIXED (2026-08-02): this is now an Elastic IP, permanently attached to
+  # the EC2 instance. It replaces two prior dynamic IPs that both broke on
+  # instance restart (63.178.68.2, then 18.193.124.166) - this one will not
+  # change again. See Vendor-Liste.md for the history.
+  server: mqtt://63.184.28.93:1883
 
 frontend:
   enabled: true

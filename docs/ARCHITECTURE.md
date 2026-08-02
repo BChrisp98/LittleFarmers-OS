@@ -31,9 +31,8 @@ WiFi Connect wird ausschließlich vom Fallback-Dienst gestartet.
 ## Zigbee2MQTT
 
 - Weboberfläche: `http://littlefarmers.local:8080`
-- Externer MQTT-Server: `mqtt://18.193.124.166:1883` (Stand 2026-07-25 -
-  keine Elastic IP, kann sich beim nächsten Neustart der Instanz wieder
-  ändern, siehe Vendor-Liste.md)
+- Externer MQTT-Server: `mqtt://63.184.28.93:1883` (Elastic IP seit
+  2026-08-02, fest, ändert sich nicht mehr bei Instanz-Neustarts)
 - Kein lokaler MQTT-Broker
 - Kein MQTT-Benutzername
 - Kein MQTT-Passwort
