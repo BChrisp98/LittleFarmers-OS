@@ -26,7 +26,12 @@ install -m 0644 \
   "$PROJECT_ROOT/config/wifi-connect.env" \
   /etc/default/wifi-connect
 
-install -m 0644 \
+# Sicherheitsfund 2026-08-16: nach der Kopplung (pair-device.sh) enthaelt
+# diese Datei das Klartext-MQTT-Passwort des Kunden - 0644 waere fuer
+# jeden lokalen Prozess auf dem Geraet lesbar. 0640 reicht: root schreibt
+# (pair-device.sh laeuft als root), littlefarmers-Nutzer liest (das
+# zigbee2mqtt.service laeuft als dieser, siehe services/zigbee2mqtt.service).
+install -m 0640 \
   "$PROJECT_ROOT/config/zigbee2mqtt.yaml" \
   /opt/zigbee2mqtt/data/configuration.yaml
 
@@ -35,7 +40,11 @@ chown -R littlefarmers:littlefarmers /opt/zigbee2mqtt
 
 mkdir -p /etc/littlefarmers
 
-install -m 0644 \
+# Sicherheitsfund 2026-08-16: enthaelt nach der Kopplung ebenfalls den
+# MQTT-Broker (MQTT_SERVER) - nur root braucht diese Datei (pair-device.sh
+# und wifi-fallback.sh laufen beide als root, siehe services/*.service),
+# daher 0600 statt 0644.
+install -m 0600 \
   "$PROJECT_ROOT/config/system.conf" \
   /etc/littlefarmers/system.conf
 
