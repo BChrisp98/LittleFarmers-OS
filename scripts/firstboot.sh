@@ -19,6 +19,21 @@ fi
 # Individuelle SSH-Hostschlüssel pro Kundengerät erzeugen.
 ssh-keygen -A
 
+# Zufaelliges, einzigartiges Systempasswort pro Geraet setzen - ohne das
+# haetten alle aus demselben Golden Image geklonten Kundengeraete dasselbe
+# (beim einmaligen Erstellen des Golden Image gesetzte) Passwort, und wer
+# es kennt, kaeme per SSH auf JEDES Kundengeraet. Sicherheitspruefung
+# 2026-08-15. Landet nur lokal, root-lesbar, auf diesem einen Geraet - fuer
+# den seltenen Support-Fall reicht physischer Zugriff (Monitor/Tastatur)
+# vor Ort, kein geteiltes Passwort uebers Netz.
+SYSTEM_USER="littlefarmers"
+if id "$SYSTEM_USER" &>/dev/null; then
+  NEW_PASSWORD="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)"
+  echo "${SYSTEM_USER}:${NEW_PASSWORD}" | chpasswd
+  echo "$NEW_PASSWORD" > /var/lib/littlefarmers/initial-password
+  chmod 0600 /var/lib/littlefarmers/initial-password
+fi
+
 # WLAN aktivieren.
 rfkill unblock wifi || true
 nmcli networking on || true

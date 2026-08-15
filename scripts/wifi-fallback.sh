@@ -108,8 +108,20 @@ while true; do
   log_message "Gespeicherte WLAN-Verbindungen funktionieren nicht."
   log_message "Starte Einrichtungs-Hotspot $HOTSPOT_SSID."
 
+  # HOTSPOT_SSID/HOTSPOT_PASSWORD standen bisher zwar in system.conf, wurden
+  # aber nie tatsaechlich an wifi-connect weitergegeben - das Tool lief mit
+  # seinen eigenen Standardwerten (offener Hotspot, andere SSID). Jeder in
+  # Funkreichweite waehrend der Ersteinrichtung haette sich verbinden koennen.
+  # Sicherheitspruefung 2026-08-15 - jetzt tatsaechlich durchgereicht.
+  WIFI_CONNECT_ARGS=(--portal-ssid "$HOTSPOT_SSID")
+  if [[ -n "${HOTSPOT_PASSWORD:-}" ]]; then
+    WIFI_CONNECT_ARGS+=(--portal-passphrase "$HOTSPOT_PASSWORD")
+  else
+    log_message "WARNUNG: HOTSPOT_PASSWORD ist leer - Einrichtungs-Hotspot laeuft offen (kein Passwort)."
+  fi
+
   timeout --signal=TERM "$HOTSPOT_RUNTIME" \
-    /usr/local/sbin/wifi-connect || true
+    /usr/local/sbin/wifi-connect "${WIFI_CONNECT_ARGS[@]}" || true
 
   log_message "Einrichtungs-Hotspot wurde beendet."
 
