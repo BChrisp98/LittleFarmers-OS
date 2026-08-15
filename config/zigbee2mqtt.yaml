@@ -2,11 +2,17 @@ version: 5
 
 mqtt:
   base_topic: zigbee2mqtt
-  # FIXED (2026-08-02): this is now an Elastic IP, permanently attached to
-  # the EC2 instance. It replaces two prior dynamic IPs that both broke on
-  # instance restart (63.178.68.2, then 18.193.124.166) - this one will not
-  # change again. See Vendor-Liste.md for the history.
-  server: mqtt://63.184.28.93:1883
+  # Broker-Sicherheit Option B (Entscheidung 2026-08-15, siehe
+  # docs/BROKER-SECURITY-PLAN.md): 63.184.28.93 war die Infrastruktur des
+  # LIEFERANTEN, nicht unsere eigene - die vorige Version dieses
+  # Kommentars ("FIXED... the EC2 instance") war schlicht falsch, das war
+  # nie unsere eigene Instanz. Jetzt zeigt jedes Geraet ab Werk auf
+  # unseren eigenen Server (18.159.76.112, wo auch das Backend laeuft) -
+  # dort laesst allow_anonymous=false ohnehin keine Verbindung zu, bevor
+  # das Geraet ueber pair-device.sh echte, kundeneigene Zugangsdaten
+  # bekommen hat (siehe dort). Diese Startdatei ist also nur ein
+  # Platzhalter, der erst nach der Kopplung durch echte Werte ersetzt wird.
+  server: mqtt://18.159.76.112:1883
 
 frontend:
   enabled: true

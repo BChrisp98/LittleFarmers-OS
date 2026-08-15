@@ -1,5 +1,17 @@
 # Broker-Sicherheit / Kundentrennung - Umsetzungsplan
 
+**Update 2026-08-15: Entscheidung gefallen - Option B.** Christoph: "Kunden
+können das eigenständig nicht, deswegen muss ich das denen vorbereiten...
+wir können uns nicht auf den Lieferanten verlassen." Eigener Server
+(`18.159.76.112`, wo das Backend schon läuft) statt Lieferanten-Broker.
+Umsetzung: `Backend/server.py` `_claim_device` provisioniert jetzt
+automatisch den Mosquitto-Zugang jedes Kunden (Passwort + ACL, siehe
+`Backend/littlefarmers-mqtt-provision.sh` und `Backend/DEPLOY.md`), die
+Pi-seitigen Konfigurationsdateien (`config/system.conf`,
+`config/zigbee2mqtt.yaml`) zeigen jetzt auf den eigenen Server statt auf
+`63.184.28.93`. Serverseitige Mosquitto-Installation + Deploy steht noch
+aus (braucht Christoph im Terminal), Code ist fertig.
+
 Stand: 2026-08-09/10 (Nacht), vorbereitet während Christophs Abwesenheit.
 **Nichts hiervon ist live geschaltet** - App-seitig sind die nötigen Felder
 jetzt vorbereitet (siehe unten), aber die eigentliche Broker-Konfiguration
