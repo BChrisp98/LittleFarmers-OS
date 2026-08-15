@@ -1,0 +1,13 @@
+[Unit]
+Description=LittleFarmers Device Pairing (Account -> MQTT Zuordnung)
+After=network-online.target zigbee2mqtt.service
+Wants=network-online.target
+ConditionPathExists=!/var/lib/littlefarmers/paired
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/littlefarmers-pair-device.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
