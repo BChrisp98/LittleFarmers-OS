@@ -53,5 +53,13 @@ install -m 0755 wifi-connect /usr/local/sbin/wifi-connect
 
 /usr/local/sbin/wifi-connect --version
 
+# Eigene captive-portal-Oberflaeche (siehe wifi-connect-ui/index.html im
+# Repo und wifi-fallback.sh, das --ui-directory hierher zeigen laesst) -
+# leitet nach erfolgreicher WLAN-Verbindung direkt in die App weiter,
+# statt dass der Kopplungscode von Hand eingetippt werden muss.
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+mkdir -p /opt/littlefarmers/wifi-connect-ui
+cp -r "$PROJECT_ROOT/wifi-connect-ui/." /opt/littlefarmers/wifi-connect-ui/
+chown -R littlefarmers:littlefarmers /opt/littlefarmers/wifi-connect-ui
 
 echo "=== WiFi Connect installiert ==="

@@ -3,6 +3,13 @@ set -euo pipefail
 
 CONFIG_FILE="/etc/littlefarmers/system.conf"
 WIFI_CONNECT_ENV="/etc/default/wifi-connect"
+# Eigene Oberflaeche statt wifi-connects mitgelieferter Standard-UI (siehe
+# install/04-wifi-connect.sh und wifi-connect-ui/index.html im Repo) - die
+# leitet den Kunden nach erfolgreicher Verbindung direkt in die
+# LittleFarmers-App weiter, statt dass er den Kopplungscode woanders
+# ablesen und von Hand eintippen muss (Christoph, 2026-08-22).
+UI_DIRECTORY="/opt/littlefarmers/wifi-connect-ui"
+DEVICE_CODE_FILE="/etc/littlefarmers/device-code"
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
   echo "Konfiguration fehlt: $CONFIG_FILE"
@@ -118,6 +125,21 @@ while true; do
     WIFI_CONNECT_ARGS+=(--portal-passphrase "$HOTSPOT_PASSWORD")
   else
     log_message "WARNUNG: HOTSPOT_PASSWORD ist leer - Einrichtungs-Hotspot laeuft offen (kein Passwort)."
+  fi
+
+  if [[ -d "$UI_DIRECTORY" ]]; then
+    WIFI_CONNECT_ARGS+=(--ui-directory "$UI_DIRECTORY")
+    # Frisch bei jedem Hotspot-Start kopiert (nicht einmalig bei der
+    # Installation), damit ein per firstboot.sh nachtraeglich erst
+    # erzeugter Code hier garantiert schon drinsteht.
+    if [[ -s "$DEVICE_CODE_FILE" ]]; then
+      mkdir -p "$UI_DIRECTORY/static"
+      cp "$DEVICE_CODE_FILE" "$UI_DIRECTORY/static/pairing-code.txt"
+    else
+      log_message "WARNUNG: $DEVICE_CODE_FILE fehlt - Weiterleitung zur App nach WLAN-Setup nicht moeglich."
+    fi
+  else
+    log_message "WARNUNG: $UI_DIRECTORY fehlt - wifi-connect laeuft mit seiner eingebauten Standard-Oberflaeche."
   fi
 
   timeout --signal=TERM "$HOTSPOT_RUNTIME" \

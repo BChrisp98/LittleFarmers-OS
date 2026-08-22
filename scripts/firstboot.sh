@@ -39,6 +39,21 @@ rfkill unblock wifi || true
 nmcli networking on || true
 nmcli radio wifi on || true
 
+# Kopplungscode jetzt schon erzeugen (nicht erst in pair-device.sh, das
+# erst NACH einer Internetverbindung laeuft) - die eigene captive-portal-
+# Oberflaeche des Ersteinrichtungs-Hotspots (siehe wifi-fallback.sh,
+# wifi-connect-ui/index.html) braucht ihn schon WAEHREND der WLAN-
+# Einrichtung, um den Kunden direkt in die App weiterzuleiten. pair-
+# device.sh erzeugt denselben Code spaeter erneut nur falls diese Datei
+# aus irgendeinem Grund noch fehlt (siehe dessen eigene Pruefung) - beide
+# Stellen produzieren denselben Wert, da machine-id zu diesem Zeitpunkt
+# schon feststeht (siehe oben).
+CODE_FILE="/etc/littlefarmers/device-code"
+mkdir -p /etc/littlefarmers
+if [[ ! -s "$CODE_FILE" ]]; then
+  sha256sum /etc/machine-id | cut -c1-12 > "$CODE_FILE"
+fi
+
 touch "$MARKER"
 
 echo "=== First Boot abgeschlossen ==="

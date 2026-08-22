@@ -1,0 +1,238 @@
+<!doctype html>
+<!--
+  Custom captive-portal UI for balena-os/wifi-connect (see
+  install/04-wifi-connect.sh, launched via `--ui-directory`, this file
+  replaces the tool's own bundled default UI).
+
+  Why this exists (Christoph, 2026-08-22): the default UI has no way to
+  hand off to the LittleFarmers app once WLAN setup succeeds - a customer
+  would have to separately open the app and re-type the pairing code
+  shown elsewhere. This page does that handoff itself: after "Verbinden"
+  is submitted, it reads this device's own pairing code (written to
+  static/pairing-code.txt by firstboot.sh, copied here by
+  wifi-fallback.sh before it launches wifi-connect - see there) and opens
+  "littlefarmers://claim?code=..." (see DeepLinkService in the app),
+  which lands the customer straight on a pre-filled, auto-submitting
+  "Gerät koppeln" screen.
+
+  Talks only to wifi-connect's own existing HTTP API (GET /networks,
+  POST /connect) - nothing here required changing wifi-connect itself,
+  which stays the stock, unmodified v4.11.84 binary.
+
+  Known limitation, not yet verified against real hardware (no way to do
+  that from where this was written): POST /connect answers "202 accepted"
+  the instant it queues the connection attempt, not once the connection
+  actually succeeds or fails (see server.rs's connect() handler upstream -
+  it doesn't wait on the result). So the redirect below fires optimistically
+  a couple seconds after submitting, not on confirmed success. In the
+  common case (correct password) this should still land well inside the
+  brief window before the Pi's own hotspot shuts down to join the real
+  network - but that window's exact length hasn't been measured on a real
+  device yet. If a customer mistypes their WLAN password, they'd still get
+  redirected into the app, which would then just show "Gerät nicht
+  gefunden" until the Pi actually gets online - not silently broken, but
+  not as clean as the confirmed-success version would be.
+-->
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LittleFarmers einrichten</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, Roboto, "Segoe UI", sans-serif;
+    background: #101410;
+    color: #eef4ee;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    width: 100%;
+    max-width: 380px;
+  }
+  h1 {
+    font-size: 22px;
+    margin: 0 0 4px;
+  }
+  p.sub {
+    color: #9fb3a0;
+    font-size: 13px;
+    margin: 0 0 24px;
+    line-height: 1.4;
+  }
+  .networks {
+    max-height: 240px;
+    overflow-y: auto;
+    border: 1px solid #2a332a;
+    border-radius: 10px;
+    margin-bottom: 16px;
+  }
+  .network {
+    padding: 12px 14px;
+    border-bottom: 1px solid #2a332a;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+  }
+  .network:last-child { border-bottom: none; }
+  .network.selected { background: #5f9e6133; }
+  .network .signal { color: #9fb3a0; font-size: 12px; }
+  input[type="password"], input[type="text"] {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid #2a332a;
+    background: #171c17;
+    color: #eef4ee;
+    font-size: 15px;
+    margin-bottom: 12px;
+  }
+  button {
+    width: 100%;
+    padding: 14px;
+    border-radius: 10px;
+    border: none;
+    background: #5f9e61;
+    color: #0c130c;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .status { font-size: 13px; margin-top: 14px; line-height: 1.4; }
+  .status.error { color: #ff8a80; }
+  .status.ok { color: #8fd18f; }
+  .reload { background: none; border: none; color: #9fb3a0; text-decoration: underline; font-size: 12px; padding: 8px 0; width: auto; font-weight: 400; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🌱 LittleFarmers einrichten</h1>
+  <p class="sub">Wähle dein WLAN aus und gib das Passwort ein, um dein Gerät zu verbinden.</p>
+
+  <div id="networks" class="networks"><div class="network">Suche nach WLAN-Netzwerken…</div></div>
+  <button class="reload" id="reload" type="button">Liste neu laden</button>
+
+  <input type="text" id="ssidManual" placeholder="oder WLAN-Name manuell eingeben" style="display:none">
+  <input type="password" id="passphrase" placeholder="WLAN-Passwort">
+  <button id="submit">Verbinden</button>
+
+  <div id="status" class="status"></div>
+</div>
+
+<script>
+(function () {
+  var selectedSsid = null;
+  var networksEl = document.getElementById('networks');
+  var passphraseEl = document.getElementById('passphrase');
+  var ssidManualEl = document.getElementById('ssidManual');
+  var submitEl = document.getElementById('submit');
+  var statusEl = document.getElementById('status');
+  var reloadEl = document.getElementById('reload');
+
+  function setStatus(text, kind) {
+    statusEl.textContent = text || '';
+    statusEl.className = 'status' + (kind ? ' ' + kind : '');
+  }
+
+  function loadNetworks() {
+    networksEl.innerHTML = '<div class="network">Suche nach WLAN-Netzwerken…</div>';
+    fetch('/networks')
+      .then(function (r) { return r.json(); })
+      .then(function (list) {
+        if (!list || !list.length) {
+          networksEl.innerHTML = '<div class="network">Kein WLAN gefunden.</div>';
+          ssidManualEl.style.display = 'block';
+          return;
+        }
+        networksEl.innerHTML = '';
+        list.forEach(function (net) {
+          var row = document.createElement('div');
+          row.className = 'network';
+          row.textContent = net.ssid;
+          // wifi-connect's /networks only ever returns {ssid, security} -
+          // no signal strength field exists (checked against the actual
+          // Rust struct, not guessed), so this shows the security type
+          // instead of a signal bar.
+          var security = document.createElement('span');
+          security.className = 'signal';
+          security.textContent = net.security && net.security !== 'Open' ? '🔒' : '';
+          row.appendChild(security);
+          row.addEventListener('click', function () {
+            selectedSsid = net.ssid;
+            ssidManualEl.style.display = 'none';
+            ssidManualEl.value = '';
+            Array.prototype.forEach.call(networksEl.children, function (el) { el.classList.remove('selected'); });
+            row.classList.add('selected');
+          });
+          networksEl.appendChild(row);
+        });
+      })
+      .catch(function () {
+        networksEl.innerHTML = '<div class="network">Konnte WLAN-Liste nicht laden.</div>';
+        ssidManualEl.style.display = 'block';
+      });
+  }
+
+  reloadEl.addEventListener('click', loadNetworks);
+  loadNetworks();
+
+  // Fetched once now (not only on submit) - this is a plain static file
+  // (see wifi-fallback.sh), no reason to wait, and having it ready avoids
+  // adding a second async step to the critical hand-off moment below.
+  var pairingCodePromise = fetch('static/pairing-code.txt')
+    .then(function (r) { return r.ok ? r.text() : null; })
+    .then(function (t) { return t ? t.trim() : null; })
+    .catch(function () { return null; });
+
+  submitEl.addEventListener('click', function () {
+    var ssid = selectedSsid || ssidManualEl.value.trim();
+    var passphrase = passphraseEl.value;
+    if (!ssid) {
+      setStatus('Bitte ein WLAN auswählen oder den Namen eingeben.', 'error');
+      return;
+    }
+    submitEl.disabled = true;
+    setStatus('Verbinde…');
+
+    fetch('/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ssid: ssid, identity: '', passphrase: passphrase })
+    })
+      .then(function (r) {
+        if (!r.ok) throw new Error('connect request failed');
+        setStatus('Verbindung wird hergestellt…');
+        // See the file-level comment: this is an optimistic wait, not a
+        // confirmed-success signal - /connect answers before the actual
+        // connection attempt finishes. A few seconds gives NetworkManager
+        // a moment to actually associate before this page's window
+        // (still on the Pi's own hotspot) closes.
+        return new Promise(function (resolve) { setTimeout(resolve, 3000); });
+      })
+      .then(function () { return pairingCodePromise; })
+      .then(function (code) {
+        if (code) {
+          setStatus('Verbunden! Öffne die LittleFarmers-App…', 'ok');
+          window.location.href = 'littlefarmers://claim?code=' + encodeURIComponent(code);
+        } else {
+          setStatus('Verbunden! Öffne jetzt die LittleFarmers-App und koppel das Gerät dort.', 'ok');
+        }
+      })
+      .catch(function () {
+        setStatus('Verbindung fehlgeschlagen - bitte Passwort prüfen und nochmal versuchen.', 'error');
+        submitEl.disabled = false;
+      });
+  });
+})();
+</script>
+</body>
+</html>
