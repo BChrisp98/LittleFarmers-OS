@@ -1,0 +1,15 @@
+[Unit]
+Description=LittleFarmers Self-Update (einmalig, sobald echtes Internet da ist)
+After=network-online.target
+Wants=network-online.target
+Before=zigbee2mqtt.service littlefarmers-pair-device.service
+ConditionPathExists=!/var/lib/littlefarmers/self-update-complete
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/littlefarmers-self-update.sh
+RemainAfterExit=yes
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

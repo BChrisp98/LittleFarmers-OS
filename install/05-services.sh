@@ -64,6 +64,14 @@ install -m 0644 \
   "$PROJECT_ROOT/services/littlefarmers-pair-device.service" \
   /etc/systemd/system/littlefarmers-pair-device.service
 
+install -m 0755 \
+  "$PROJECT_ROOT/scripts/self-update-firstboot.sh" \
+  /usr/local/bin/littlefarmers-self-update.sh
+
+install -m 0644 \
+  "$PROJECT_ROOT/services/littlefarmers-self-update.service" \
+  /etc/systemd/system/littlefarmers-self-update.service
+
 
 systemctl daemon-reload
 
@@ -74,6 +82,7 @@ systemctl enable zigbee2mqtt.service
 systemctl enable littlefarmers-wifi-fallback.service
 systemctl enable firstboot.service
 systemctl enable littlefarmers-pair-device.service
+systemctl enable littlefarmers-self-update.service
 
 # WiFi Connect darf nicht dauerhaft laufen.
 systemctl disable --now wifi-connect.service 2>/dev/null || true
