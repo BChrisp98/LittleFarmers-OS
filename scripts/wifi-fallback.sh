@@ -50,6 +50,20 @@ enable_wifi_autoconnect() {
   done < <(nmcli -t -f UUID,TYPE connection show)
 }
 
+prepare_wifi_interface() {
+  # Force wlan0 into a clean, known state right before wifi-connect takes
+  # over - part of the os-error-99 workaround below (see there for the
+  # full story). Cheap insurance against wlan0 still being half-configured
+  # from whatever it was doing a moment ago (client mode, a previous
+  # failed AP attempt, etc.).
+  nmcli device set wlan0 managed yes >/dev/null 2>&1 || true
+  nmcli device disconnect wlan0 >/dev/null 2>&1 || true
+  ip link set wlan0 down >/dev/null 2>&1 || true
+  sleep 2
+  ip link set wlan0 up >/dev/null 2>&1 || true
+  sleep 2
+}
+
 try_saved_wifi_connections() {
   log_message "Versuche gespeicherte WLAN-Verbindungen."
 
@@ -148,27 +162,62 @@ while true; do
   # "Cannot assign requested address" and the whole process exits within
   # ~15 seconds - confirmed live on real hardware, 2026-08-23. Can't fix
   # that race inside wifi-connect itself without patching and recompiling
-  # its Rust source (no toolchain available for that here). What we CAN
-  # do from outside: notice a suspiciously fast exit (a real customer
-  # session or a genuine HOTSPOT_RUNTIME timeout both take far longer
-  # than this) and just retry a few times, since the race is timing-
-  # dependent and a second attempt usually succeeds - instead of falling
-  # through to the full ~90s "no internet" wait before trying again,
-  # which was making the hotspot flicker on for a few seconds every
-  # couple of minutes instead of just working.
+  # its Rust source (no toolchain available for that here).
+  #
+  # First attempt at a fix here was a blind retry loop (just re-running
+  # wifi-connect a few times) - dropped after a follow-up test showed it
+  # losing the SAME race 5 times in a row, back to back, in well under a
+  # minute total. That's not occasional bad luck, that's deterministic on
+  # this hardware, so retrying the identical sequence doesn't help.
+  #
+  # This version instead runs wifi-connect in the background and watches
+  # it from outside for the first ~20 seconds: if NetworkManager reports
+  # wlan0 as active but the portal IP genuinely isn't bound yet in the
+  # kernel (checked via `ip addr`, not trusted from nmcli's own state),
+  # we assign it ourselves with `ip addr replace` - which is safe to run
+  # even if NetworkManager is mid-assignment, unlike `ip addr add`. If
+  # wifi-connect still dies fast even with that in place, one retry with
+  # a fresh prepare_wifi_interface cleanup; if it dies fast again after
+  # that too, this almost certainly isn't the IP-timing race anymore
+  # (interface/driver/power problem instead - see the low-voltage warning
+  # noted the same day this was found) and retrying further won't help.
   hotspot_attempt=0
-  while [[ "$hotspot_attempt" -lt 5 ]]; do
+  while [[ "$hotspot_attempt" -lt 2 ]]; do
     hotspot_attempt=$((hotspot_attempt + 1))
     attempt_start="$(date +%s)"
 
+    prepare_wifi_interface
+
+    if command -v vcgencmd >/dev/null 2>&1; then
+      log_message "Spannungsstatus vor Hotspot-Start: $(vcgencmd get_throttled 2>/dev/null || echo unbekannt)"
+    fi
+
     timeout --signal=TERM "$HOTSPOT_RUNTIME" \
-      /usr/local/sbin/wifi-connect "${WIFI_CONNECT_ARGS[@]}" || true
+      /usr/local/sbin/wifi-connect "${WIFI_CONNECT_ARGS[@]}" &
+    wc_pid=$!
+
+    watchdog_ticks=0
+    while [[ "$watchdog_ticks" -lt 80 ]]; do
+      if ! kill -0 "$wc_pid" 2>/dev/null; then
+        break
+      fi
+      if ip -4 addr show dev wlan0 2>/dev/null | grep -q '192\.168\.42\.1/'; then
+        break
+      fi
+      if nmcli -t -f GENERAL.STATE device show wlan0 2>/dev/null | grep -q '^100'; then
+        ip addr replace 192.168.42.1/24 dev wlan0 >/dev/null 2>&1 || true
+      fi
+      sleep 0.25
+      watchdog_ticks=$((watchdog_ticks + 1))
+    done
+
+    wait "$wc_pid" || true
 
     attempt_duration=$(($(date +%s) - attempt_start))
     if [[ "$attempt_duration" -ge 20 ]]; then
       break
     fi
-    log_message "Hotspot endete ungewoehnlich schnell (${attempt_duration}s) - vermutlich das bekannte Start-Timing-Problem, versuche erneut (Versuch $hotspot_attempt/5)."
+    log_message "Hotspot endete ungewoehnlich schnell (${attempt_duration}s) trotz IP-Watchdog - versuche einmal erneut (Versuch $hotspot_attempt/2)."
     sleep 2
   done
 
