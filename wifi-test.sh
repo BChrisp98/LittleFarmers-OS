@@ -74,6 +74,7 @@ line
 if [[ "${1:-}" == "--start-hotspot" ]]; then
   echo ""
   echo "Setze wlan0 zurueck und starte den Hotspot testweise fuer ~25 Sekunden..."
+  echo "(Achtung: laeuft wlan0 gerade als SSH-Weg, bricht die Verbindung ab - das ist normal.)"
   nmcli device set wlan0 managed yes >/dev/null 2>&1 || true
   nmcli device disconnect wlan0 >/dev/null 2>&1 || true
   ip link set wlan0 down >/dev/null 2>&1 || true
@@ -82,30 +83,22 @@ if [[ "${1:-}" == "--start-hotspot" ]]; then
   sleep 2
 
   source /etc/littlefarmers/system.conf
-  ARGS=(--portal-ssid "${HOTSPOT_SSID:-LittleFarmers}")
-  [[ -n "${HOTSPOT_PASSWORD:-}" ]] && ARGS+=(--portal-passphrase "$HOTSPOT_PASSWORD")
-
-  timeout 30 /usr/local/sbin/wifi-connect "${ARGS[@]}" &
-  wc_pid=$!
-
-  success=0
-  for i in $(seq 1 25); do
-    if ! kill -0 "$wc_pid" 2>/dev/null; then
-      break
-    fi
-    if ip -4 addr show dev wlan0 2>/dev/null | grep -q '192\.168\.42\.1/'; then
-      success=1
-      echo "ERFOLG nach ${i}s: 192.168.42.1 ist aktiv, Hotspot laeuft."
-      break
-    fi
-    sleep 1
-  done
-
-  if [[ "$success" -eq 0 ]]; then
-    echo "Nach 25s immer noch keine 192.168.42.1 - Hotspot ist NICHT stabil hochgekommen."
+  TEST_CONN="LittleFarmers-Hotspot-Test"
+  nmcli connection delete "$TEST_CONN" >/dev/null 2>&1 || true
+  nmcli connection add type wifi ifname wlan0 con-name "$TEST_CONN" ssid "${HOTSPOT_SSID:-LittleFarmers}" >/dev/null 2>&1
+  nmcli connection modify "$TEST_CONN" 802-11-wireless.mode ap 802-11-wireless.band bg >/dev/null 2>&1
+  nmcli connection modify "$TEST_CONN" ipv4.method shared >/dev/null 2>&1
+  if [[ -n "${HOTSPOT_PASSWORD:-}" ]]; then
+    nmcli connection modify "$TEST_CONN" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$HOTSPOT_PASSWORD" >/dev/null 2>&1
   fi
 
-  kill "$wc_pid" >/dev/null 2>&1 || true
-  wait "$wc_pid" 2>/dev/null || true
-  nmcli connection delete "${HOTSPOT_SSID:-LittleFarmers}" >/dev/null 2>&1 || true
+  if nmcli connection up "$TEST_CONN" >/dev/null 2>&1; then
+    echo "ERFOLG: Hotspot-Verbindung aktiviert."
+    ip -4 -brief addr show wlan0
+  else
+    echo "FEHLER: Hotspot-Verbindung konnte nicht aktiviert werden."
+  fi
+
+  nmcli connection down "$TEST_CONN" >/dev/null 2>&1 || true
+  nmcli connection delete "$TEST_CONN" >/dev/null 2>&1 || true
 fi
