@@ -142,8 +142,35 @@ while true; do
     log_message "WARNUNG: $UI_DIRECTORY fehlt - wifi-connect laeuft mit seiner eingebauten Standard-Oberflaeche."
   fi
 
-  timeout --signal=TERM "$HOTSPOT_RUNTIME" \
-    /usr/local/sbin/wifi-connect "${WIFI_CONNECT_ARGS[@]}" || true
+  # wifi-connect has a known race: NetworkManager can report the access
+  # point as created a moment before the 192.168.42.1 address is actually
+  # bound to wlan0, so wifi-connect's own HTTP server then fails with
+  # "Cannot assign requested address" and the whole process exits within
+  # ~15 seconds - confirmed live on real hardware, 2026-08-23. Can't fix
+  # that race inside wifi-connect itself without patching and recompiling
+  # its Rust source (no toolchain available for that here). What we CAN
+  # do from outside: notice a suspiciously fast exit (a real customer
+  # session or a genuine HOTSPOT_RUNTIME timeout both take far longer
+  # than this) and just retry a few times, since the race is timing-
+  # dependent and a second attempt usually succeeds - instead of falling
+  # through to the full ~90s "no internet" wait before trying again,
+  # which was making the hotspot flicker on for a few seconds every
+  # couple of minutes instead of just working.
+  hotspot_attempt=0
+  while [[ "$hotspot_attempt" -lt 5 ]]; do
+    hotspot_attempt=$((hotspot_attempt + 1))
+    attempt_start="$(date +%s)"
+
+    timeout --signal=TERM "$HOTSPOT_RUNTIME" \
+      /usr/local/sbin/wifi-connect "${WIFI_CONNECT_ARGS[@]}" || true
+
+    attempt_duration=$(($(date +%s) - attempt_start))
+    if [[ "$attempt_duration" -ge 20 ]]; then
+      break
+    fi
+    log_message "Hotspot endete ungewoehnlich schnell (${attempt_duration}s) - vermutlich das bekannte Start-Timing-Problem, versuche erneut (Versuch $hotspot_attempt/5)."
+    sleep 2
+  done
 
   log_message "Einrichtungs-Hotspot wurde beendet."
 
