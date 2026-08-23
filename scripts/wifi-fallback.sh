@@ -184,13 +184,21 @@ while true; do
   hotspot_attempt=0
   while [[ "$hotspot_attempt" -lt 2 ]]; do
     hotspot_attempt=$((hotspot_attempt + 1))
-    attempt_start="$(date +%s)"
 
     prepare_wifi_interface
 
     if command -v vcgencmd >/dev/null 2>&1; then
       log_message "Spannungsstatus vor Hotspot-Start: $(vcgencmd get_throttled 2>/dev/null || echo unbekannt)"
     fi
+
+    # Measured from here, not from before prepare_wifi_interface - that
+    # function alone takes ~4s (two deliberate 2s settle-sleeps), which
+    # was silently pushing every attempt's measured duration past the 20s
+    # cutoff below even when wifi-connect itself only ran ~15-17s. Bug:
+    # the retry branch never actually fired because of this, on both
+    # attempts logged 2026-08-23 19:09 and 19:14 - we only ever saw
+    # attempt 1 fail, never got real data on whether attempt 2 helps.
+    attempt_start="$(date +%s)"
 
     timeout --signal=TERM "$HOTSPOT_RUNTIME" \
       /usr/local/sbin/wifi-connect "${WIFI_CONNECT_ARGS[@]}" &
