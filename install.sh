@@ -18,7 +18,7 @@ sudo -v
 sudo bash "$PROJECT_ROOT/install/01-system.sh"
 sudo bash "$PROJECT_ROOT/install/02-node.sh"
 sudo bash "$PROJECT_ROOT/install/03-zigbee2mqtt.sh"
-sudo bash "$PROJECT_ROOT/install/04-wifi-connect.sh"
+sudo bash "$PROJECT_ROOT/install/04-setup-portal.sh"
 sudo bash "$PROJECT_ROOT/install/05-services.sh"
 sudo bash "$PROJECT_ROOT/install/99-cleanup.sh"
 

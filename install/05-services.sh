@@ -22,10 +22,6 @@ install -m 0755 \
   "$PROJECT_ROOT/scripts/wifi-fallback.sh" \
   /usr/local/bin/littlefarmers-wifi-fallback.sh
 
-install -m 0644 \
-  "$PROJECT_ROOT/config/wifi-connect.env" \
-  /etc/default/wifi-connect
-
 # Sicherheitsfund 2026-08-16: nach der Kopplung (pair-device.sh) enthaelt
 # diese Datei das Klartext-MQTT-Passwort des Kunden - 0644 waere fuer
 # jeden lokalen Prozess auf dem Geraet lesbar. 0640 reicht: root schreibt
@@ -44,9 +40,23 @@ mkdir -p /etc/littlefarmers
 # MQTT-Broker (MQTT_SERVER) - nur root braucht diese Datei (pair-device.sh
 # und wifi-fallback.sh laufen beide als root, siehe services/*.service),
 # daher 0600 statt 0644.
-install -m 0600 \
-  "$PROJECT_ROOT/config/system.conf" \
-  /etc/littlefarmers/system.conf
+#
+# Kritischer Fund 2026-08-23, im Zuge des woechentlichen Auto-Updates
+# (siehe littlefarmers-update.timer weiter unten): Dieser install-Befehl
+# lief bisher bedingungslos bei JEDEM Durchlauf und haette damit die
+# echten MQTT-Zugangsdaten, die pair-device.sh nach erfolgreicher
+# Kopplung per sed -i in genau diese Datei schreibt, jede Woche wieder
+# auf die Platzhalter-Werte der Repo-Vorlage zurueckgesetzt - ein bereits
+# gekoppeltes Kundengeraet haette sich damit selbst laufend die eigene
+# Verbindung zerschossen. Nur beim allerersten Mal installieren (Datei
+# existiert noch nicht); danach bleibt sie unangetastet, auch bei
+# zukuenftigen neuen Feldern in der Vorlage (die brauchen dann eine
+# gezielte Migration, kein blindes Ueberschreiben).
+if [[ ! -f /etc/littlefarmers/system.conf ]]; then
+  install -m 0600 \
+    "$PROJECT_ROOT/config/system.conf" \
+    /etc/littlefarmers/system.conf
+fi
 
 install -m 0755 \
   "$PROJECT_ROOT/scripts/firstboot.sh" \
@@ -72,6 +82,20 @@ install -m 0644 \
   "$PROJECT_ROOT/services/littlefarmers-self-update.service" \
   /etc/systemd/system/littlefarmers-self-update.service
 
+# Woechentliches Update, damit Geraete beim Kunden dauerhaft aktuell
+# bleiben statt nur einmalig beim allerersten Boot (Christoph, 2026-08-23:
+# einmal im Monat reicht nicht - woechentlich).
+install -m 0755 \
+  "$PROJECT_ROOT/scripts/weekly-update.sh" \
+  /usr/local/bin/littlefarmers-weekly-update.sh
+
+install -m 0644 \
+  "$PROJECT_ROOT/services/littlefarmers-update.service" \
+  /etc/systemd/system/littlefarmers-update.service
+
+install -m 0644 \
+  "$PROJECT_ROOT/services/littlefarmers-update.timer" \
+  /etc/systemd/system/littlefarmers-update.timer
 
 systemctl daemon-reload
 
@@ -83,8 +107,6 @@ systemctl enable littlefarmers-wifi-fallback.service
 systemctl enable firstboot.service
 systemctl enable littlefarmers-pair-device.service
 systemctl enable littlefarmers-self-update.service
-
-# WiFi Connect darf nicht dauerhaft laufen.
-systemctl disable --now wifi-connect.service 2>/dev/null || true
+systemctl enable --now littlefarmers-update.timer
 
 echo "=== Dienste installiert und für Autostart aktiviert ==="

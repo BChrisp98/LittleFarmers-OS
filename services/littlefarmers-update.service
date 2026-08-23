@@ -1,0 +1,8 @@
+[Unit]
+Description=LittleFarmers OS woechentliches Update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/littlefarmers-weekly-update.sh

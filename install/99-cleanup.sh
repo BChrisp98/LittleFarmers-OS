@@ -11,6 +11,11 @@ fi
 apt-get autoremove -y
 apt-get clean
 
-rm -rf /tmp/wifi-connect* 2>/dev/null || true
+# Reste der frueheren wifi-connect-Installation (seit 2026-08-23 durch
+# ein eigenes, nmcli-basiertes Setup-Portal ersetzt, siehe
+# install/04-setup-portal.sh) - falls das Binary auf diesem Geraet noch
+# von einer aelteren Installation vorhanden ist.
+rm -f /usr/local/sbin/wifi-connect
+rm -f /etc/default/wifi-connect
 
 echo "=== Aufräumen abgeschlossen ==="

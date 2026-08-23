@@ -2,12 +2,12 @@
 set -euo pipefail
 
 CONFIG_FILE="/etc/littlefarmers/system.conf"
-WIFI_CONNECT_ENV="/etc/default/wifi-connect"
-# Eigene Oberflaeche statt wifi-connects mitgelieferter Standard-UI (siehe
-# install/04-wifi-connect.sh und wifi-connect-ui/index.html im Repo) - die
-# leitet den Kunden nach erfolgreicher Verbindung direkt in die
-# LittleFarmers-App weiter, statt dass er den Kopplungscode woanders
-# ablesen und von Hand eintippen muss (Christoph, 2026-08-22).
+# Eigene Oberflaeche statt einer mitgelieferten Standard-UI (siehe
+# install/04-setup-portal.sh, wifi-connect-ui/index.html und
+# wifi-connect-ui/portal_server.py im Repo) - die leitet den Kunden nach
+# erfolgreicher Verbindung direkt in die LittleFarmers-App weiter, statt
+# dass er den Kopplungscode woanders ablesen und von Hand eintippen muss
+# (Christoph, 2026-08-22).
 UI_DIRECTORY="/opt/littlefarmers/wifi-connect-ui"
 DEVICE_CODE_FILE="/etc/littlefarmers/device-code"
 
@@ -17,12 +17,6 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
 fi
 
 source "$CONFIG_FILE"
-
-if [[ -f "$WIFI_CONNECT_ENV" ]]; then
-  set -a
-  source "$WIFI_CONNECT_ENV"
-  set +a
-fi
 
 # Standardwerte, falls sie nicht in der Konfiguration stehen.
 CHECK_INTERVAL="${CHECK_INTERVAL:-15}"
@@ -51,11 +45,10 @@ enable_wifi_autoconnect() {
 }
 
 prepare_wifi_interface() {
-  # Force wlan0 into a clean, known state right before wifi-connect takes
-  # over - part of the os-error-99 workaround below (see there for the
-  # full story). Cheap insurance against wlan0 still being half-configured
-  # from whatever it was doing a moment ago (client mode, a previous
-  # failed AP attempt, etc.).
+  # Force wlan0 into a clean, known state right before setting up the
+  # hotspot connection below. Cheap insurance against wlan0 still being
+  # half-configured from whatever it was doing a moment ago (client mode,
+  # a previous failed AP attempt, etc.).
   nmcli device set wlan0 managed yes >/dev/null 2>&1 || true
   nmcli device disconnect wlan0 >/dev/null 2>&1 || true
   ip link set wlan0 down >/dev/null 2>&1 || true
@@ -134,100 +127,67 @@ while true; do
   # seinen eigenen Standardwerten (offener Hotspot, andere SSID). Jeder in
   # Funkreichweite waehrend der Ersteinrichtung haette sich verbinden koennen.
   # Sicherheitspruefung 2026-08-15 - jetzt tatsaechlich durchgereicht.
-  WIFI_CONNECT_ARGS=(--portal-ssid "$HOTSPOT_SSID")
-  if [[ -n "${HOTSPOT_PASSWORD:-}" ]]; then
-    WIFI_CONNECT_ARGS+=(--portal-passphrase "$HOTSPOT_PASSWORD")
-  else
+  if [[ -z "${HOTSPOT_PASSWORD:-}" ]]; then
     log_message "WARNUNG: HOTSPOT_PASSWORD ist leer - Einrichtungs-Hotspot laeuft offen (kein Passwort)."
   fi
 
-  if [[ -d "$UI_DIRECTORY" ]]; then
-    WIFI_CONNECT_ARGS+=(--ui-directory "$UI_DIRECTORY")
-    # Frisch bei jedem Hotspot-Start kopiert (nicht einmalig bei der
-    # Installation), damit ein per firstboot.sh nachtraeglich erst
-    # erzeugter Code hier garantiert schon drinsteht.
-    if [[ -s "$DEVICE_CODE_FILE" ]]; then
-      mkdir -p "$UI_DIRECTORY/static"
-      cp "$DEVICE_CODE_FILE" "$UI_DIRECTORY/static/pairing-code.txt"
-    else
-      log_message "WARNUNG: $DEVICE_CODE_FILE fehlt - Weiterleitung zur App nach WLAN-Setup nicht moeglich."
-    fi
-  else
-    log_message "WARNUNG: $UI_DIRECTORY fehlt - wifi-connect laeuft mit seiner eingebauten Standard-Oberflaeche."
+  # balena-os/wifi-connect replaced entirely (2026-08-23) - real-hardware
+  # testing found a reliable internal race: it creates the NetworkManager
+  # access point and, in essentially the same instant, tries to bind its
+  # own HTTP server to it, and consistently lost that race on this Pi
+  # (confirmed repeatedly, including with a from-outside watchdog trying
+  # to force the IP - didn't help, the race is inside wifi-connect's own
+  # process and too fast to intervene in from outside). The same day, a
+  # manual test proved plain `nmcli` (802-11-wireless.mode ap +
+  # ipv4.method shared) brings the AP up fast and reliably on this exact
+  # hardware, with NetworkManager's own built-in DHCP/DNS - no separate
+  # dnsmasq process, which was itself failing ("unknown interface wlan0")
+  # every time wifi-connect's bind failed. This does that instead, plus a
+  # small stdlib-only Python server (wifi-connect-ui/portal_server.py)
+  # that serves the same setup page and turns it into `nmcli` calls.
+  HOTSPOT_CONNECTION_NAME="LittleFarmers-Hotspot"
+
+  prepare_wifi_interface
+
+  nmcli connection delete "$HOTSPOT_CONNECTION_NAME" >/dev/null 2>&1 || true
+
+  nmcli connection add type wifi ifname wlan0 con-name "$HOTSPOT_CONNECTION_NAME" ssid "$HOTSPOT_SSID" >/dev/null 2>&1
+  nmcli connection modify "$HOTSPOT_CONNECTION_NAME" 802-11-wireless.mode ap 802-11-wireless.band bg >/dev/null 2>&1
+  nmcli connection modify "$HOTSPOT_CONNECTION_NAME" ipv4.method shared >/dev/null 2>&1
+  if [[ -n "${HOTSPOT_PASSWORD:-}" ]]; then
+    nmcli connection modify "$HOTSPOT_CONNECTION_NAME" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$HOTSPOT_PASSWORD" >/dev/null 2>&1
   fi
 
-  # wifi-connect has a known race: NetworkManager can report the access
-  # point as created a moment before the 192.168.42.1 address is actually
-  # bound to wlan0, so wifi-connect's own HTTP server then fails with
-  # "Cannot assign requested address" and the whole process exits within
-  # ~15 seconds - confirmed live on real hardware, 2026-08-23. Can't fix
-  # that race inside wifi-connect itself without patching and recompiling
-  # its Rust source (no toolchain available for that here).
-  #
-  # First attempt at a fix here was a blind retry loop (just re-running
-  # wifi-connect a few times) - dropped after a follow-up test showed it
-  # losing the SAME race 5 times in a row, back to back, in well under a
-  # minute total. That's not occasional bad luck, that's deterministic on
-  # this hardware, so retrying the identical sequence doesn't help.
-  #
-  # This version instead runs wifi-connect in the background and watches
-  # it from outside for the first ~20 seconds: if NetworkManager reports
-  # wlan0 as active but the portal IP genuinely isn't bound yet in the
-  # kernel (checked via `ip addr`, not trusted from nmcli's own state),
-  # we assign it ourselves with `ip addr replace` - which is safe to run
-  # even if NetworkManager is mid-assignment, unlike `ip addr add`. If
-  # wifi-connect still dies fast even with that in place, one retry with
-  # a fresh prepare_wifi_interface cleanup; if it dies fast again after
-  # that too, this almost certainly isn't the IP-timing race anymore
-  # (interface/driver/power problem instead - see the low-voltage warning
-  # noted the same day this was found) and retrying further won't help.
-  hotspot_attempt=0
-  while [[ "$hotspot_attempt" -lt 2 ]]; do
-    hotspot_attempt=$((hotspot_attempt + 1))
+  if command -v vcgencmd >/dev/null 2>&1; then
+    log_message "Spannungsstatus vor Hotspot-Start: $(vcgencmd get_throttled 2>/dev/null || echo unbekannt)"
+  fi
 
-    prepare_wifi_interface
+  if nmcli connection up "$HOTSPOT_CONNECTION_NAME" >/dev/null 2>&1; then
+    log_message "Hotspot $HOTSPOT_SSID aktiv."
 
-    if command -v vcgencmd >/dev/null 2>&1; then
-      log_message "Spannungsstatus vor Hotspot-Start: $(vcgencmd get_throttled 2>/dev/null || echo unbekannt)"
+    if [[ -d "$UI_DIRECTORY" ]]; then
+      # Frisch bei jedem Hotspot-Start kopiert (nicht einmalig bei der
+      # Installation), damit ein per firstboot.sh nachtraeglich erst
+      # erzeugter Code hier garantiert schon drinsteht.
+      if [[ -s "$DEVICE_CODE_FILE" ]]; then
+        mkdir -p "$UI_DIRECTORY/static"
+        cp "$DEVICE_CODE_FILE" "$UI_DIRECTORY/static/pairing-code.txt"
+      else
+        log_message "WARNUNG: $DEVICE_CODE_FILE fehlt - Weiterleitung zur App nach WLAN-Setup nicht moeglich."
+      fi
+
+      timeout --signal=TERM "$HOTSPOT_RUNTIME" \
+        python3 "$UI_DIRECTORY/portal_server.py" --port "${CAPTIVE_PORT:-80}" --ui-dir "$UI_DIRECTORY" || true
+    else
+      log_message "FEHLER: $UI_DIRECTORY fehlt - kein Portal-Server, Hotspot laeuft ohne Einrichtungsseite."
+      sleep "$HOTSPOT_RUNTIME"
     fi
+  else
+    log_message "FEHLER: Hotspot-Verbindung konnte nicht aktiviert werden."
+  fi
 
-    # Measured from here, not from before prepare_wifi_interface - that
-    # function alone takes ~4s (two deliberate 2s settle-sleeps), which
-    # was silently pushing every attempt's measured duration past the 20s
-    # cutoff below even when wifi-connect itself only ran ~15-17s. Bug:
-    # the retry branch never actually fired because of this, on both
-    # attempts logged 2026-08-23 19:09 and 19:14 - we only ever saw
-    # attempt 1 fail, never got real data on whether attempt 2 helps.
-    attempt_start="$(date +%s)"
-
-    timeout --signal=TERM "$HOTSPOT_RUNTIME" \
-      /usr/local/sbin/wifi-connect "${WIFI_CONNECT_ARGS[@]}" &
-    wc_pid=$!
-
-    watchdog_ticks=0
-    while [[ "$watchdog_ticks" -lt 80 ]]; do
-      if ! kill -0 "$wc_pid" 2>/dev/null; then
-        break
-      fi
-      if ip -4 addr show dev wlan0 2>/dev/null | grep -q '192\.168\.42\.1/'; then
-        break
-      fi
-      if nmcli -t -f GENERAL.STATE device show wlan0 2>/dev/null | grep -q '^100'; then
-        ip addr replace 192.168.42.1/24 dev wlan0 >/dev/null 2>&1 || true
-      fi
-      sleep 0.25
-      watchdog_ticks=$((watchdog_ticks + 1))
-    done
-
-    wait "$wc_pid" || true
-
-    attempt_duration=$(($(date +%s) - attempt_start))
-    if [[ "$attempt_duration" -ge 20 ]]; then
-      break
-    fi
-    log_message "Hotspot endete ungewoehnlich schnell (${attempt_duration}s) trotz IP-Watchdog - versuche einmal erneut (Versuch $hotspot_attempt/2)."
-    sleep 2
-  done
+  nmcli connection down "$HOTSPOT_CONNECTION_NAME" >/dev/null 2>&1 || true
+  nmcli connection delete "$HOTSPOT_CONNECTION_NAME" >/dev/null 2>&1 || true
 
   log_message "Einrichtungs-Hotspot wurde beendet."
 

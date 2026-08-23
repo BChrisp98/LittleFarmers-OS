@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Pi-Onboarding Option A (siehe docs/ONBOARDING-PLAN.md, docs/BROKER-
 # SECURITY-PLAN.md): dieses Skript ist die Geraete-Seite des dort
-# beschriebenen Ablaufs. WLAN-Einrichtung (wifi-connect/wifi-fallback.sh)
+# beschriebenen Ablaufs. WLAN-Einrichtung (wifi-fallback.sh)
 # bleibt komplett unangetastet - dieses Skript startet danach, sobald
 # echtes Internet da ist, und tut nur eins: den eigenen Kopplungscode an
 # das Backend melden, warten bis der Kunde ihn in der App eingegeben hat,

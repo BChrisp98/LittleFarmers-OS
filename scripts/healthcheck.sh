@@ -44,12 +44,14 @@ check_enabled avahi-daemon.service
 check_enabled ssh.service
 check_enabled littlefarmers-wifi-fallback.service
 check_enabled zigbee2mqtt.service
+check_enabled littlefarmers-update.timer
 
 echo
 echo "Programme:"
 command -v node >/dev/null && echo "[OK]     Node.js installiert" || echo "[FEHLER] Node.js fehlt"
 command -v pnpm >/dev/null && echo "[OK]     pnpm installiert" || echo "[FEHLER] pnpm fehlt"
-command -v wifi-connect >/dev/null && echo "[OK]     WiFi Connect installiert" || echo "[FEHLER] WiFi Connect fehlt"
+command -v python3 >/dev/null && echo "[OK]     Python3 installiert" || echo "[FEHLER] Python3 fehlt"
+[[ -f /opt/littlefarmers/wifi-connect-ui/portal_server.py ]] && echo "[OK]     Setup-Portal installiert" || echo "[FEHLER] Setup-Portal fehlt"
 
 echo
 echo "Netzwerk:"

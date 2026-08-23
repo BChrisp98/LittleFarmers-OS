@@ -1,0 +1,10 @@
+[Unit]
+Description=Woechentlicher Zeitplan fuer das LittleFarmers-OS-Update
+
+[Timer]
+OnCalendar=weekly
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

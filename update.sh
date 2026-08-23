@@ -8,7 +8,7 @@ echo "=== LittleFarmers OS Update ==="
 git -C "$PROJECT_ROOT" pull --ff-only
 
 sudo bash "$PROJECT_ROOT/install/03-zigbee2mqtt.sh"
-sudo bash "$PROJECT_ROOT/install/04-wifi-connect.sh"
+sudo bash "$PROJECT_ROOT/install/04-setup-portal.sh"
 sudo bash "$PROJECT_ROOT/install/05-services.sh"
 
 sudo systemctl restart zigbee2mqtt.service
