@@ -75,6 +75,19 @@ if [[ "${1:-}" == "--start-hotspot" ]]; then
   echo ""
   echo "Setze wlan0 zurueck und starte den Hotspot testweise fuer ~25 Sekunden..."
   echo "(Achtung: laeuft wlan0 gerade als SSH-Weg, bricht die Verbindung ab - das ist normal.)"
+
+  # Stop the real fallback service first - found live 2026-08-30 that
+  # leaving it running while also manually testing here causes both to
+  # fight over wlan0 at the same time ("Disconnected by user" errors
+  # that had nothing to do with the actual thing being tested). Restart
+  # it again at the end so this script doesn't leave the device without
+  # its normal fallback protection.
+  service_was_active=0
+  if systemctl is-active --quiet littlefarmers-wifi-fallback; then
+    service_was_active=1
+    systemctl stop littlefarmers-wifi-fallback
+  fi
+
   nmcli device set wlan0 managed yes >/dev/null 2>&1 || true
   nmcli device disconnect wlan0 >/dev/null 2>&1 || true
   sleep 1
@@ -89,13 +102,18 @@ if [[ "${1:-}" == "--start-hotspot" ]]; then
     nmcli connection modify "$TEST_CONN" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$HOTSPOT_PASSWORD" >/dev/null 2>&1
   fi
 
-  if nmcli connection up "$TEST_CONN" >/dev/null 2>&1; then
+  if up_output="$(nmcli connection up "$TEST_CONN" 2>&1)"; then
     echo "ERFOLG: Hotspot-Verbindung aktiviert."
     ip -4 -brief addr show wlan0
   else
-    echo "FEHLER: Hotspot-Verbindung konnte nicht aktiviert werden."
+    echo "FEHLER: Hotspot-Verbindung konnte nicht aktiviert werden: $up_output"
   fi
 
   nmcli connection down "$TEST_CONN" >/dev/null 2>&1 || true
   nmcli connection delete "$TEST_CONN" >/dev/null 2>&1 || true
+
+  if [[ "$service_was_active" -eq 1 ]]; then
+    systemctl start littlefarmers-wifi-fallback
+    echo "(Fallback-Dienst wieder gestartet.)"
+  fi
 fi
