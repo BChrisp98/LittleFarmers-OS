@@ -77,10 +77,7 @@ if [[ "${1:-}" == "--start-hotspot" ]]; then
   echo "(Achtung: laeuft wlan0 gerade als SSH-Weg, bricht die Verbindung ab - das ist normal.)"
   nmcli device set wlan0 managed yes >/dev/null 2>&1 || true
   nmcli device disconnect wlan0 >/dev/null 2>&1 || true
-  ip link set wlan0 down >/dev/null 2>&1 || true
-  sleep 2
-  ip link set wlan0 up >/dev/null 2>&1 || true
-  sleep 2
+  sleep 1
 
   source /etc/littlefarmers/system.conf
   TEST_CONN="LittleFarmers-Hotspot-Test"

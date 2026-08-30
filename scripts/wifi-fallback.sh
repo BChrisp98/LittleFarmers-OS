@@ -45,16 +45,20 @@ enable_wifi_autoconnect() {
 }
 
 prepare_wifi_interface() {
-  # Force wlan0 into a clean, known state right before setting up the
-  # hotspot connection below. Cheap insurance against wlan0 still being
-  # half-configured from whatever it was doing a moment ago (client mode,
-  # a previous failed AP attempt, etc.).
+  # Just disconnect wlan0 from whatever it was doing before setting up
+  # the hotspot connection below - NOT a full `ip link down`+`up` radio
+  # reinit anymore (removed 2026-08-30). That forces the WiFi chip
+  # through a complete power-up/re-init cycle immediately before also
+  # asking it to become an access point - on marginal power (confirmed
+  # live: throttled=0x50005 exactly at hotspot start, repeatedly,
+  # despite a 33W supply, worse right after this down/up reset), that
+  # back-to-back double power spike is a plausible way to make an
+  # already-tight power budget worse, not better. A plain `nmcli device
+  # disconnect` is enough to get wlan0 out of client mode without
+  # forcing the radio through a full reinit.
   nmcli device set wlan0 managed yes >/dev/null 2>&1 || true
   nmcli device disconnect wlan0 >/dev/null 2>&1 || true
-  ip link set wlan0 down >/dev/null 2>&1 || true
-  sleep 2
-  ip link set wlan0 up >/dev/null 2>&1 || true
-  sleep 2
+  sleep 1
 }
 
 try_saved_wifi_connections() {
