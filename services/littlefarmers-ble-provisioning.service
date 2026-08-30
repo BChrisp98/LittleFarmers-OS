@@ -1,0 +1,17 @@
+[Unit]
+Description=LittleFarmers BLE WiFi Provisioning
+After=bluetooth.target NetworkManager.service
+Wants=bluetooth.target NetworkManager.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/bin/littlefarmers-ble-provisioning.py
+Restart=always
+RestartSec=10
+# Needs CAP_NET_ADMIN (BlueZ advertising/GATT) - simplest correct option is
+# running as root, matching littlefarmers-wifi-fallback.service's own
+# approach for the same reason (it also needs to manage network interfaces).
+User=root
+
+[Install]
+WantedBy=multi-user.target

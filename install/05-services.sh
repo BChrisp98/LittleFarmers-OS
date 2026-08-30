@@ -22,6 +22,19 @@ install -m 0755 \
   "$PROJECT_ROOT/scripts/wifi-fallback.sh" \
   /usr/local/bin/littlefarmers-wifi-fallback.sh
 
+# BLE-Provisioning ersetzt ab hier (feature/ble-provisioning-Branch,
+# 2026-08-30) den WLAN-Hotspot als primaeren Weg. Das alte Skript/der
+# alte Dienst bleiben installiert (siehe oben) als Rueckfalloption, falls
+# BLE sich nicht bewaehrt - werden unten aber bewusst NICHT aktiviert,
+# damit nicht beide Mechanismen gleichzeitig um wlan0 konkurrieren.
+install -m 0755 \
+  "$PROJECT_ROOT/scripts/ble_provisioning.py" \
+  /usr/local/bin/littlefarmers-ble-provisioning.py
+
+install -m 0644 \
+  "$PROJECT_ROOT/services/littlefarmers-ble-provisioning.service" \
+  /etc/systemd/system/littlefarmers-ble-provisioning.service
+
 # Sicherheitsfund 2026-08-16: nach der Kopplung (pair-device.sh) enthaelt
 # diese Datei das Klartext-MQTT-Passwort des Kunden - 0644 waere fuer
 # jeden lokalen Prozess auf dem Geraet lesbar. 0640 reicht: root schreibt
@@ -102,11 +115,19 @@ systemctl daemon-reload
 systemctl enable NetworkManager.service
 systemctl enable avahi-daemon.service
 systemctl enable ssh.service
+systemctl enable bluetooth.service
 systemctl enable zigbee2mqtt.service
-systemctl enable littlefarmers-wifi-fallback.service
 systemctl enable firstboot.service
 systemctl enable littlefarmers-pair-device.service
 systemctl enable littlefarmers-self-update.service
 systemctl enable --now littlefarmers-update.timer
+
+# BLE-Provisioning ist jetzt der primaere Mechanismus - der alte
+# WLAN-Hotspot-Dienst bleibt bewusst deaktiviert (nicht deinstalliert),
+# damit beide nicht gleichzeitig um wlan0 konkurrieren. Zum Zurueckwechseln:
+# `sudo systemctl disable --now littlefarmers-ble-provisioning &&
+#  sudo systemctl enable --now littlefarmers-wifi-fallback`
+systemctl disable --now littlefarmers-wifi-fallback.service 2>/dev/null || true
+systemctl enable littlefarmers-ble-provisioning.service
 
 echo "=== Dienste installiert und für Autostart aktiviert ==="
