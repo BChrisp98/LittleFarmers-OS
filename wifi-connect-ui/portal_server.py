@@ -74,6 +74,27 @@ def list_networks() -> list[dict]:
     return networks
 
 
+def forget_other_wifi_profiles(keep_ssid: str) -> None:
+    # Only the most recently connected WiFi is worth keeping around - a
+    # device like this normally lives in one place with one network, so
+    # accumulating every network it's ever touched (Christoph's own test
+    # routers/hotspots included) just adds noise and extra failed
+    # attempts to work through if one goes stale (Christoph, 2026-08-30).
+    # Keep this narrowly scoped to WiFi only - never touches the
+    # ethernet/loopback connections.
+    try:
+        result = subprocess.run(
+            ["nmcli", "-t", "-f", "UUID,TYPE,NAME", "connection", "show"],
+            capture_output=True, text=True, timeout=15,
+        )
+    except Exception:
+        return
+    for uuid, conn_type, name in parse_nmcli_terse(result.stdout, 3):
+        if conn_type != "802-11-wireless" or name == keep_ssid:
+            continue
+        subprocess.run(["nmcli", "connection", "delete", uuid], capture_output=True, text=True, timeout=15)
+
+
 def connect_to_network(ssid: str, passphrase: str) -> None:
     # Runs after the HTTP response is already sent - this call moves
     # wlan0 out of AP mode, which is exactly what's supposed to happen
@@ -82,7 +103,9 @@ def connect_to_network(ssid: str, passphrase: str) -> None:
     cmd = ["nmcli", "device", "wifi", "connect", ssid]
     if passphrase:
         cmd += ["password", passphrase]
-    subprocess.run(cmd, capture_output=True, text=True, timeout=45)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
+    if result.returncode == 0:
+        forget_other_wifi_profiles(ssid)
 
 
 class Handler(BaseHTTPRequestHandler):
