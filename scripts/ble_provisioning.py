@@ -63,7 +63,6 @@ CHAR_CREDENTIALS_UUID = "6c85f002-79e0-4a58-a9c1-b8f3d6e7c2a1"
 CHAR_STATUS_UUID = "6c85f003-79e0-4a58-a9c1-b8f3d6e7c2a1"
 CHAR_DEVICE_CODE_UUID = "6c85f004-79e0-4a58-a9c1-b8f3d6e7c2a1"
 
-CONFIG_FILE = "/etc/littlefarmers/system.conf"
 DEVICE_CODE_FILE = "/etc/littlefarmers/device-code"
 CUSTOMER_WIFI_CONN_NAME = "Customer-WiFi"
 
@@ -74,21 +73,6 @@ CONNECTIVITY_HOST = "1.1.1.1"
 
 def log(msg: str) -> None:
     print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}", flush=True)
-
-
-def read_config() -> dict:
-    values = {}
-    try:
-        with open(CONFIG_FILE, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, _, value = line.partition("=")
-                values[key.strip()] = value.strip().strip('"')
-    except FileNotFoundError:
-        pass
-    return values
 
 
 def internet_available() -> bool:
@@ -280,7 +264,6 @@ def build_peripheral(local_name: str) -> "peripheral.Peripheral":
 
 
 def run_provisioning() -> None:
-    config = read_config()
     device_code = ""
     try:
         with open(DEVICE_CODE_FILE, encoding="utf-8") as f:
@@ -294,14 +277,17 @@ def run_provisioning() -> None:
 
     periph = build_peripheral(local_name)
 
-    # bluezero's GLib mainloop (started inside periph.publish()) blocks this
+    # bluezero's GLib mainloop (periph.publish() calls self.mainloop.run(),
+    # where self.mainloop is a bluezero.async_tools.EventLoop wrapping a
+    # plain GLib.MainLoop - confirmed by reading bluezero's actual source,
+    # 2026-08-30: there is no Peripheral.stop() method, an earlier draft of
+    # this file called one that doesn't exist and would have crashed the
+    # very first time this branch tried to end advertising) blocks this
     # thread, so the "did the old WiFi come back?" recheck runs on a
-    # background thread instead - it only needs to call periph.stop() (via
-    # GLib's own thread-safe idle_add) to end publish() and return control
-    # to run_provisioning's caller when the known WiFi reappears or a
-    # credential test succeeds.
-    from gi.repository import GLib
-
+    # background thread instead - it only needs to call
+    # periph.mainloop.quit(), which is safe to call from any thread
+    # (GLib.MainLoop.quit() is documented thread-safe), to end publish()
+    # and return control to run_provisioning's caller.
     def recheck_loop():
         while True:
             time.sleep(WIFI_RECHECK_INTERVAL)
@@ -309,11 +295,11 @@ def run_provisioning() -> None:
                 current_state = state.status["state"]
             if current_state == "connected" or internet_available():
                 log("WLAN wieder da / Zugangsdaten bestaetigt - beende BLE-Advertising.")
-                GLib.idle_add(periph.stop)
+                periph.mainloop.quit()
                 return
 
     threading.Thread(target=recheck_loop, daemon=True).start()
-    periph.publish()  # blocks until periph.stop() is called
+    periph.publish()  # blocks until periph.mainloop.quit() is called (see above)
     log("BLE-Advertising beendet.")
 
 
