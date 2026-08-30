@@ -162,7 +162,14 @@ while true; do
     log_message "Spannungsstatus vor Hotspot-Start: $(vcgencmd get_throttled 2>/dev/null || echo unbekannt)"
   fi
 
-  if nmcli connection up "$HOTSPOT_CONNECTION_NAME" >/dev/null 2>&1; then
+  # Capture nmcli's actual error text and a bit of interface state instead
+  # of just logging "failed" with no reason - found live on 2026-08-30
+  # that this was failing continuously in the field for potentially a
+  # full week with zero diagnostic detail beyond "konnte nicht aktiviert
+  # werden", which made it impossible to tell apart from every other
+  # possible cause (undervoltage, rfkill, driver not settled yet after
+  # prepare_wifi_interface's down/up cycle, etc.).
+  if up_output="$(nmcli connection up "$HOTSPOT_CONNECTION_NAME" 2>&1)"; then
     log_message "Hotspot $HOTSPOT_SSID aktiv."
 
     if [[ -d "$UI_DIRECTORY" ]]; then
@@ -183,7 +190,9 @@ while true; do
       sleep "$HOTSPOT_RUNTIME"
     fi
   else
-    log_message "FEHLER: Hotspot-Verbindung konnte nicht aktiviert werden."
+    log_message "FEHLER: Hotspot-Verbindung konnte nicht aktiviert werden: $up_output"
+    log_message "Diagnose - wlan0: $(nmcli -t -f DEVICE,STATE,CONNECTION device status 2>&1 | grep '^wlan0:' || echo 'nicht in nmcli device status gefunden')"
+    log_message "Diagnose - rfkill: $(rfkill list wifi 2>&1 | tr '\n' ' ')"
   fi
 
   nmcli connection down "$HOTSPOT_CONNECTION_NAME" >/dev/null 2>&1 || true
