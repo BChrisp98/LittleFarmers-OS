@@ -151,14 +151,23 @@ class ProvisioningState:
     def __init__(self):
         self.lock = threading.Lock()
         self.status = {"state": "idle", "detail": ""}
-        self.on_status_change = None  # set to the notify trigger once published
+        # The actual localGATT.Characteristic object for STATUS, set by
+        # build_peripheral() once it exists - set_status() needs this to
+        # push a real notify event (via its set_value(), which internally
+        # fires PropertiesChanged - confirmed by reading bluezero's
+        # localGATT.py source, 2026-08-30). Before that object exists (or
+        # after a cycle ends and periph is torn down), notifications are
+        # simply skipped - a client can still get the current value via a
+        # plain characteristic read.
+        self.status_characteristic = None
 
     def set_status(self, state: str, detail: str = "") -> None:
         with self.lock:
             self.status = {"state": state, "detail": detail}
+            char = self.status_characteristic
         log(f"Status: {state} {detail}".strip())
-        if self.on_status_change:
-            self.on_status_change()
+        if char is not None:
+            char.set_value(list(json.dumps(self.status).encode("utf-8")))
 
 
 state = ProvisioningState()
@@ -260,6 +269,16 @@ def build_peripheral(local_name: str) -> "peripheral.Peripheral":
         value=[], notifying=False, flags=["read"],
         read_callback=device_code_read_cb,
     )
+
+    # add_characteristic() only appends to periph.characteristics, doesn't
+    # return the object - grab the STATUS one back out by UUID so
+    # set_status() can actually push notify events through it (see
+    # ProvisioningState.set_status).
+    for char in periph.characteristics:
+        if char.props.get("org.bluez.GattCharacteristic1", {}).get("UUID") == CHAR_STATUS_UUID:
+            state.status_characteristic = char
+            break
+
     return periph
 
 
