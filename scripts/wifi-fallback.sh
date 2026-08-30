@@ -81,6 +81,17 @@ try_saved_wifi_connections() {
       log_message "Internetverbindung wurde wiederhergestellt."
       return 0
     fi
+
+    # `--wait 20` only bounds how long the nmcli *command* blocks - if the
+    # attempt is still going in NetworkManager's backend past that (e.g.
+    # DHCP has its own ~45s timeout, confirmed live 2026-08-30), a failed
+    # attempt could still be mid-authentication when we move on to either
+    # the next saved profile or straight into setting up the hotspot.
+    # Explicitly disconnecting here aborts it instead of leaving it to
+    # potentially collide with what comes next - suspected cause of the
+    # "802.1X supplicant took too long to authenticate" hotspot failures
+    # seen the same day.
+    nmcli device disconnect wlan0 >/dev/null 2>&1 || true
   done < <(nmcli -t -f UUID,TYPE connection show)
 
   return 1
