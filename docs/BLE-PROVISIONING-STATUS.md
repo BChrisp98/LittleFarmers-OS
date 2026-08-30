@@ -63,6 +63,26 @@ Schritt.
   Deprecation-Hinweise zu `RadioListTile`, keine Fehler). Ein kompletter
   `flutter build apk --release` läuft erfolgreich durch.
 
+## Nachtrag: zwei echte Bugs gefunden und gefixt (ohne Hardware, per Quellcode-Lektüre)
+
+Statt bei den `bluezero`-Aufrufen zu raten, hab ich den echten Quellcode
+von `bluezero` direkt von GitHub gezogen (`gh api repos/ukBaz/python-bluezero/...`)
+und gegengeprüft. Dabei zwei echte Fehler gefunden, die sonst erst beim
+ersten Live-Test aufgefallen wären:
+
+1. `Peripheral.stop()` existiert gar nicht — der Code rief das versehentlich
+   auf, um das Advertising zu beenden. Fix: `periph.mainloop.quit()` direkt
+   (das ist der tatsächlich existierende, offiziell Thread-sichere Weg).
+2. Status-Änderungen (`connecting`/`testing`/`connected`/`failed`) haben nie
+   wirklich eine Benachrichtigung ausgelöst — nur ein internes Dict wurde
+   aktualisiert, aber `Characteristic.set_value()` (das intern das
+   `PropertiesChanged`-Signal auslöst) wurde nie aufgerufen. Fix: die
+   Zeichen-Referenz wird jetzt beim Aufbau eingesammelt und bei jedem
+   Status-Wechsel genutzt.
+
+Beide Fixes sind committet (`68b3e2f`, `a7dddd4`). Das erhöht die
+Zuversicht deutlich, ersetzt aber nicht den echten Hardware-Test.
+
 ## Was NICHT geprüft ist (der eigentliche Test für morgen)
 
 1. **Erstes echtes Pairing.** Pi mit dem neuen Branch aktualisieren,
