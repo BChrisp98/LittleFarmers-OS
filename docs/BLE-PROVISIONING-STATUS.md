@@ -1,3 +1,28 @@
+# BLE-Provisioning — Stand 2026-09-04
+
+## Nachtrag 2026-09-04
+
+Zwei weitere Ergänzungen, angestoßen durch Christophs Frage "warum nicht
+automatisch wie bei Apple":
+
+- **WLAN-QR-Code-Scanner** (`lib/services/wifi_qr_parser.dart`,
+  `lib/screens/wifi_qr_scan_screen.dart`) als Alternative zum
+  Passwort-Eintippen. Wichtig zu wissen: Ein automatisches, Apple-artiges
+  Passwort-Teilen ist für eine Drittanbieter-App auf **keinem** Betriebssystem
+  möglich (weder Android noch iOS erlauben das Auslesen gespeicherter
+  WLAN-Passwörter, aus Datenschutzgründen) — der QR-Code-Scan ist die
+  technisch tatsächlich machbare, nächstbeste Lösung. Parser-Logik mit
+  echten Testfällen bestätigt (`dart run`, nicht nur kompiliert).
+- **Bluetooth-aus-Erkennung**: Statt generisches "Gerät nicht gefunden"
+  zeigt die App jetzt explizit "Bluetooth ist ausgeschaltet", falls das der
+  Grund ist.
+
+Beide Ergänzungen sind committet, APK wurde erneut gebaut und geschickt.
+Der Kern-Status unten (noch nie an echter Hardware getestet) gilt weiterhin
+unverändert.
+
+---
+
 # BLE-Provisioning — Stand nach der Nacht 2026-08-30 → 2026-08-31
 
 Gebaut auf Wunsch von Christoph, während er geschlafen hat. Ersetzt den
