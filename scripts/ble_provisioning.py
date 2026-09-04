@@ -110,21 +110,52 @@ def parse_nmcli_terse(output: str, fields: int) -> list[list[str]]:
     return rows
 
 
+# A GATT characteristic value can never exceed 512 bytes (Bluetooth Core
+# Spec hard limit, independent of the negotiated ATT MTU) - found this
+# 2026-09-04 while double-checking the protocol before the first real
+# test, not from a live failure. An address with several networks in
+# range (confirmed live during this project's own WiFi debugging: 8-10+
+# SSIDs visible at once) could push the JSON-encoded network list over
+# that limit with no warning other than a truncated/corrupt read on the
+# app side. Kept well under the hard limit (400 bytes budget, not 512)
+# to leave headroom for JSON structure overhead this rough per-entry
+# estimate doesn't fully capture.
+NETWORKS_BYTE_BUDGET = 400
+
+
 def scan_networks() -> list[dict]:
     try:
         result = subprocess.run(
-            ["nmcli", "-t", "-f", "SSID,SECURITY", "device", "wifi", "list", "--rescan", "yes"],
+            ["nmcli", "-t", "-f", "SSID,SECURITY,SIGNAL", "device", "wifi", "list", "--rescan", "yes"],
             capture_output=True, text=True, timeout=15,
         )
     except Exception:
         return []
     seen = set()
-    networks = []
-    for ssid, security in parse_nmcli_terse(result.stdout, 2):
+    candidates = []
+    for ssid, security, signal in parse_nmcli_terse(result.stdout, 3):
         if not ssid or ssid in seen:
             continue
         seen.add(ssid)
-        networks.append({"ssid": ssid, "security": security or "Open"})
+        try:
+            signal_value = int(signal)
+        except ValueError:
+            signal_value = 0
+        candidates.append((signal_value, {"ssid": ssid, "security": security or "Open"}))
+
+    # Strongest signal first - if the list has to be cut off to fit the
+    # byte budget, the networks a customer is actually near (and likely
+    # to pick) are the ones kept.
+    candidates.sort(key=lambda c: c[0], reverse=True)
+
+    networks: list[dict] = []
+    used_bytes = 2  # opening + closing bracket of the JSON array
+    for _, network in candidates:
+        entry_bytes = len(json.dumps(network).encode("utf-8")) + 1  # +1 for the separating comma
+        if networks and used_bytes + entry_bytes > NETWORKS_BYTE_BUDGET:
+            break
+        networks.append(network)
+        used_bytes += entry_bytes
     return networks
 
 
