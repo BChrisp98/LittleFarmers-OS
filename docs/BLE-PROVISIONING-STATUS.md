@@ -1,148 +1,101 @@
-# BLE-Provisioning — Stand 2026-09-04
+# BLE-Provisioning — Stand 2026-09-06 (Nacht)
 
-## Nachtrag 2026-09-04
+## Zusammenfassung dieser Nacht
 
-Zwei weitere Ergänzungen, angestoßen durch Christophs Frage "warum nicht
-automatisch wie bei Apple":
+Der erste echte Live-Test mit Handy + Pi hat stattgefunden (nach zwei
+Nächten reiner Vorbereitung ohne Hardware-Test) - und dabei mehrere echte,
+teils kritische Fehler gefunden, die eine Kette bildeten: erst der
+eigentliche Bluetooth-Verbindungsaufbau, dann Zigbee2MQTT-Abstürze, dann
+fehlende MQTT-Zugangsdaten. Alle gefunden und behoben, siehe unten im
+Detail. Zwei sind so kritisch, dass sie auch rückwirkend auf `main` (den
+WLAN-Hotspot-Stand) übertragen wurden, weil sie unabhängig vom
+Provisioning-Weg jedes Kundengerät beim automatischen wöchentlichen
+Update hätten treffen können.
 
-- **WLAN-QR-Code-Scanner** (`lib/services/wifi_qr_parser.dart`,
-  `lib/screens/wifi_qr_scan_screen.dart`) als Alternative zum
-  Passwort-Eintippen. Wichtig zu wissen: Ein automatisches, Apple-artiges
-  Passwort-Teilen ist für eine Drittanbieter-App auf **keinem** Betriebssystem
-  möglich (weder Android noch iOS erlauben das Auslesen gespeicherter
-  WLAN-Passwörter, aus Datenschutzgründen) — der QR-Code-Scan ist die
-  technisch tatsächlich machbare, nächstbeste Lösung. Parser-Logik mit
-  echten Testfällen bestätigt (`dart run`, nicht nur kompiliert).
-- **Bluetooth-aus-Erkennung**: Statt generisches "Gerät nicht gefunden"
-  zeigt die App jetzt explizit "Bluetooth ist ausgeschaltet", falls das der
-  Grund ist.
+## Kritische Funde dieser Nacht (auf beiden Branches, `main` + `feature/ble-provisioning`)
 
-Beide Ergänzungen sind committet, APK wurde erneut gebaut und geschickt.
-Der Kern-Status unten (noch nie an echter Hardware getestet) gilt weiterhin
-unverändert.
+1. **Zigbee2MQTT trackte `master` statt einer festen Version.** Jedes
+   `update.sh` (auch das wöchentliche, unbeaufsichtigte) zog die
+   allerneueste Zigbee2MQTT-Version direkt von deren GitHub-Projekt -
+   ungetestet von uns. Ein echter Versionssprung hat live einen Absturz
+   ausgelöst ("Configuration is not consistent with adapter state/backup!").
+   **Fix:** Feste, geprüfte Version (`2.14.1`) im Code verankert - künftige
+   Updates kommen nur noch an, wenn wir sie selbst bewusst hochsetzen.
+2. **`configuration.yaml` wurde bei jedem Update überschrieben** (dieselbe
+   Fehler-Klasse wie der `system.conf`-Bug vom 23.08.). Die Vorlage hat
+   `network_key/pan_id/ext_pan_id: GENERATE` - jedes Überschreiben zwang
+   Zigbee2MQTT, diese Werte neu zufällig zu erzeugen, was dann nicht mehr
+   zum tatsächlich auf dem Zigbee-Chip gespeicherten Stand passte -
+   Absturzschleife. **Fix:** Datei wird jetzt nur beim allerersten Mal
+   installiert, genau wie `system.conf`.
+3. **Derselbe Effekt hat auch die vom Kopplungs-Dienst geschriebenen
+   echten MQTT-Zugangsdaten gelöscht.** `littlefarmers-pair-device.service`
+   läuft nur einmalig (Markierungsdatei `/var/lib/littlefarmers/paired`) -
+   als sein Ergebnis durch das oben genannte Überschreiben wieder verloren
+   ging, hat er sich nicht selbst repariert, weil er dachte, er sei schon
+   fertig. **Einmaliger Recovery-Schritt** (nicht automatisiert, siehe
+   unten) war nötig: Markierungsdatei löschen, Dienst neu anstoßen.
+4. **`--experimental`-Flag für BlueZ falsch gesetzt** (nur
+   `feature/ble-provisioning`): `systemctl show -p ExecStart` liefert
+   KEINEN einfachen Pfad, sondern eine strukturierte Beschreibung
+   (`{ path=... ; argv[]=... ; ... }`) - das alte Skript hat nur die
+   öffnende Klammer `{` als "Pfad" erwischt und Bluetooth damit komplett
+   lahmgelegt (`status=203/EXEC`). **Fix:** Den echten `path=`-Wert richtig
+   herausgezogen, zusaetzlich geprueft, dass er wirklich eine ausfuehrbare
+   Datei ist, bevor irgendwas geschrieben wird.
+5. **BLE-Verbindung wurde vor Ende der Kopplung abgewürgt** (nur
+   `feature/ble-provisioning`): Sobald die WLAN-Zugangsdaten bestätigt
+   waren, hat der Hintergrund-Prüfprozess (der checkt "ist das alte WLAN
+   zurück?") sofort das komplette Bluetooth beendet - noch bevor das Handy
+   den letzten nötigen Lesevorgang (den Kopplungscode fürs Konto) machen
+   konnte. Die App blieb auf "Sende WLAN-Zugangsdaten..." hängen, das
+   Handy zeigte keine aktive Verbindung mehr. **Fix:** 15 Sekunden
+   Pufferzeit eingebaut, bevor Bluetooth nach erfolgreicher Kopplung
+   wirklich beendet wird.
+6. **Kaputtes, altes WLAN-Profil blockierte neue Zugangsdaten** (nur
+   `feature/ble-provisioning`): `nmcli device wifi connect` hat ein
+   gleichnamiges, unvollständiges altes Profil wiederverwendet statt ein
+   neues anzulegen ("key-mgmt: property is missing"). **Fix:** Vorheriges
+   Profil mit demselben Namen wird jetzt immer zuerst gelöscht.
 
----
+## App-seitige Ergänzungen dieser Nacht
 
-# BLE-Provisioning — Stand nach der Nacht 2026-08-30 → 2026-08-31
-
-Gebaut auf Wunsch von Christoph, während er geschlafen hat. Ersetzt den
-WLAN-Hotspot/Captive-Portal-Ansatz (siehe `scripts/wifi-fallback.sh`,
-weiterhin vorhanden als Rückfalloption, siehe unten) durch Bluetooth Low
-Energy (BLE) als primären Weg für die WLAN-Ersteinrichtung.
-
-**Wichtig: Noch nie gegen echte Hardware getestet.** Alles unten ist
-sorgfältig gebaut und wo möglich geprüft (Syntax, `flutter analyze`,
-kompletter Release-Build), aber ein echtes Bluetooth-Pairing zwischen
-Handy und Pi hat noch nie stattgefunden. Das ist der wichtigste nächste
-Schritt.
+- **WLAN-QR-Code-Scanner** als Alternative zum Passwort-Eintippen (echtes
+  Apple-artiges automatisches Passwort-Teilen ist für Drittanbieter-Apps
+  auf keinem Betriebssystem möglich - das ist die technisch beste
+  Annäherung).
+- **Bluetooth-Aus-Erkennung** mit direktem "Bluetooth einschalten"-Knopf
+  in der App (ein Tap statt Wechsel in die Handy-Einstellungen).
+- **Zeitüberschreitungen für jede Bluetooth-Operation** (20s) - vorher
+  konnte die App bei einem Verbindungsproblem unbegrenzt und ohne
+  Fehlermeldung hängen bleiben ("Verbinden geklickt, nix passiert").
+- **Direkter Bluetooth-Einrichtungs-Button auf dem Start-Bildschirm**
+  (wenn noch keine Pflanze angelegt ist) - kein Umweg über die
+  Einstellungen nötig für die Ersteinrichtung.
+- **Pairing-Zeitfenster für Sensoren von 120s auf 254s verlängert** -
+  entspricht jetzt Zigbee2MQTTs eigenem Standardwert.
+- **Neue Geräte-Übersicht** (`lib/screens/device_overview_screen.dart`) -
+  zeigt alle gekoppelten Sensoren/Aktoren, ob sie gerade erreichbar sind,
+  und erlaubt Entfernen. Braucht `availability: true` in Zigbee2MQTTs
+  Konfiguration (jetzt Teil der Vorlage) - auf dem aktuellen Test-Pi
+  einmalig manuell nachzutragen (siehe Kommentar in
+  `config/zigbee2mqtt.yaml`).
 
 ## Wo der Code liegt
 
-- **Pi:** Branch `feature/ble-provisioning` im Repo
-  `BChrisp98/LittleFarmers-OS` (nicht `main` — `main` hat weiterhin den
-  funktionierenden, zuletzt getesteten WLAN-Hotspot-Stand, getaggt als
-  `wifi-hotspot-working-checkpoint`).
-- **App:** Branch `feature/ble-provisioning` im lokalen Repo unter
-  `App-Rebuild` (war vorher gar nicht unter Git — jetzt ist es das, mit
-  `main` als sauberer Ausgangspunkt).
+Wie vorher: `main` = zuletzt funktionierender WLAN-Hotspot-Stand (jetzt
+zusätzlich mit den kritischen Zigbee2MQTT-Fixes), `feature/ble-provisioning`
+= aktueller Bluetooth-Weg samt aller Fixes von heute Nacht. Beide Repos
+(Pi + App) haben beide Branches, App lokal (kein Remote).
 
-## Was fertig ist
+## Was als Nächstes ansteht
 
-- `scripts/ble_provisioning.py` — Python-Dienst auf dem Pi, der per
-  `bluezero` einen BLE-GATT-Server aufmacht. Zustandsautomat: normal
-  online → NetworkManager verbindet automatisch das gespeicherte
-  „Customer-WiFi"-Profil; 120 Sekunden offline → BLE-Advertising startet;
-  alle 30 Sekunden erneut prüfen, ob das alte WLAN wieder da ist → sofort
-  beenden, sobald ja; neue Zugangsdaten werden **erst getestet, bevor**
-  das alte Profil angefasst wird (ein Tippfehler beim Passwort darf den
-  Kunden nicht von beiden WLANs aussperren).
-- GATT-Protokoll (Service-UUID `6c85f000-...`): `NETWORKS` (WLAN-Liste
-  lesen), `CREDENTIALS` (neues WLAN schreiben), `STATUS`
-  (idle/connecting/testing/connected/failed, mit Notify), `DEVICE_CODE`
-  (liest den existierenden Kopplungscode — nutzt den bereits vorhandenen
-  Account-Kopplungs-Mechanismus wieder, keine neue Backend-Logik nötig).
-- `install/06-ble-provisioning.sh` — installiert `bluez`, `python3-dbus`,
-  `python3-gi`, `bluezero` (pip). Setzt außerdem BlueZ auf den
-  `--experimental`-Modus (per systemd-Override, nicht durch Bearbeiten der
-  Originaldatei) — das ist zwingend nötig, damit der GATT-Peripheral-Modus
-  überhaupt funktioniert, sonst schlägt `bluezero` beim Start fehl. Per
-  Recherche bestätigt, aber **nicht** an echter Hardware verifiziert.
-- `install/05-services.sh` — installiert/aktiviert
-  `littlefarmers-ble-provisioning.service`, deaktiviert (nicht deinstalliert)
-  `littlefarmers-wifi-fallback.service`, damit beide nicht gleichzeitig um
-  `wlan0` konkurrieren. Zurückwechseln:
-  ```bash
-  sudo systemctl disable --now littlefarmers-ble-provisioning
-  sudo systemctl enable --now littlefarmers-wifi-fallback
-  ```
-- App: `lib/services/ble_provisioning_service.dart` (Client-Seite des
-  Protokolls, `flutter_blue_plus`) und `lib/screens/ble_setup_screen.dart`
-  (Scan → WLAN wählen → Passwort → Live-Status → automatische
-  Kontokopplung über den existierenden `claimDevice`-Aufruf). In den
-  Einstellungen ist „Gerät einrichten" (Bluetooth) jetzt der Haupteintrag,
-  „Gerät koppeln (Code)" bleibt als expliziter Rückfall daneben stehen.
-- Android-Berechtigungen (`BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT`/Location für
-  ältere Geräte) sind im Manifest ergänzt. Kein iOS-Projekt vorhanden,
-  daher auch keine `Info.plist`-Anpassung nötig.
-- **Geprüft:** `flutter analyze` läuft sauber (nur zwei harmlose
-  Deprecation-Hinweise zu `RadioListTile`, keine Fehler). Ein kompletter
-  `flutter build apk --release` läuft erfolgreich durch.
-
-## Nachtrag: zwei echte Bugs gefunden und gefixt (ohne Hardware, per Quellcode-Lektüre)
-
-Statt bei den `bluezero`-Aufrufen zu raten, hab ich den echten Quellcode
-von `bluezero` direkt von GitHub gezogen (`gh api repos/ukBaz/python-bluezero/...`)
-und gegengeprüft. Dabei zwei echte Fehler gefunden, die sonst erst beim
-ersten Live-Test aufgefallen wären:
-
-1. `Peripheral.stop()` existiert gar nicht — der Code rief das versehentlich
-   auf, um das Advertising zu beenden. Fix: `periph.mainloop.quit()` direkt
-   (das ist der tatsächlich existierende, offiziell Thread-sichere Weg).
-2. Status-Änderungen (`connecting`/`testing`/`connected`/`failed`) haben nie
-   wirklich eine Benachrichtigung ausgelöst — nur ein internes Dict wurde
-   aktualisiert, aber `Characteristic.set_value()` (das intern das
-   `PropertiesChanged`-Signal auslöst) wurde nie aufgerufen. Fix: die
-   Zeichen-Referenz wird jetzt beim Aufbau eingesammelt und bei jedem
-   Status-Wechsel genutzt.
-
-Beide Fixes sind committet (`68b3e2f`, `a7dddd4`). Das erhöht die
-Zuversicht deutlich, ersetzt aber nicht den echten Hardware-Test.
-
-## Was NICHT geprüft ist (der eigentliche Test für morgen)
-
-1. **Erstes echtes Pairing.** Pi mit dem neuen Branch aktualisieren,
-   Handy-App mit dem neuen Branch neu bauen und installieren, dann den
-   kompletten Weg einmal live durchgehen: Pi offline → Bluetooth erscheint
-   → App findet es → WLAN auswählen → verbinden → Status live verfolgen →
-   Kopplung mit dem Konto.
-2. Ob `--experimental` auf genau dieser BlueZ-Version wirklich reicht,
-   oder ob noch was fehlt (D-Bus-Berechtigungen, `bluetoothd`-Policy-Datei,
-   o.ä.) — das lässt sich nur an echter Hardware erkennen.
-3. Timing-Feingefühl: sind 120 Sekunden bis BLE startet und 30 Sekunden
-   Re-Check-Intervall wirklich gut fürs echte Erlebnis? Lässt sich leicht
-   in `scripts/ble_provisioning.py` (`OFFLINE_TIMEOUT`,
-   `WIFI_RECHECK_INTERVAL`) anpassen.
-4. Sicherheitsfrage, bewusst offen gelassen (siehe Kommentar im Code):
-   GATT-Schreibzugriffe sind aktuell nicht extra verschlüsselt, verlassen
-   sich auf BLE-eigenes Pairing/Bonding. Für den ersten Test okay, für den
-   Kunden-Rollout nochmal bewusst entscheiden.
-
-## So geht's morgen weiter
-
-```bash
-# Auf dem Pi:
-cd ~/LittleFarmers-OS
-git fetch
-git checkout feature/ble-provisioning
-git pull
-./update.sh
-sudo journalctl -u littlefarmers-ble-provisioning -f   # live mitlesen
-```
-
-App-Seite: `flutter build apk --release` auf `feature/ble-provisioning`
-im `App-Rebuild`-Ordner, auf dem Handy installieren, dann den Ablauf
-live durchspielen.
-
-**Falls es nicht klappt:** `main` in beiden Repos hat den unangetasteten,
-zuletzt funktionierenden WLAN-Hotspot-Stand — einfach dorthin zurück, kein
-Fortschritt von der Nacht geht dabei verloren.
+1. **Nous-Zigbee-Steckdose koppeln** - der eigentliche Grund, warum die
+   ganze Fehlerkette heute Nacht überhaupt sichtbar wurde. Mit allen
+   Fixes (Zigbee2MQTT stabil, echte MQTT-Zugangsdaten, längeres
+   Pairing-Fenster) sollte das jetzt klappen - noch nicht final bestätigt,
+   der Test wurde mitten in der Nacht unterbrochen.
+2. Sobald das steht: die eigentliche Ende-zu-Ende-Bestätigung des
+   kompletten Ablaufs (Pi ohne WLAN → Bluetooth → App → Kopplung → Sensor
+   hinzufügen) einmal am Stück, ohne Unterbrechung.
+3. Danach: Golden Image ziehen, Branches mergen.
