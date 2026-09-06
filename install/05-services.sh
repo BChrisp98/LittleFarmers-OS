@@ -40,9 +40,21 @@ install -m 0644 \
 # jeden lokalen Prozess auf dem Geraet lesbar. 0640 reicht: root schreibt
 # (pair-device.sh laeuft als root), littlefarmers-Nutzer liest (das
 # zigbee2mqtt.service laeuft als dieser, siehe services/zigbee2mqtt.service).
-install -m 0640 \
-  "$PROJECT_ROOT/config/zigbee2mqtt.yaml" \
-  /opt/zigbee2mqtt/data/configuration.yaml
+#
+# Kritischer Fund 2026-09-06, dieselbe Fehler-Klasse wie der system.conf-Bug
+# weiter unten: Dieser install-Befehl lief bisher bedingungslos bei JEDEM
+# Update. Unsere Vorlage hat network_key/pan_id/ext_pan_id auf "GENERATE"
+# stehen - jedes Ueberschreiben zwingt Zigbee2MQTT beim naechsten Start,
+# diese Werte neu zufaellig zu erzeugen, was dann nicht mehr zu dem passt,
+# was tatsaechlich auf dem Zigbee-Adapter-Chip gespeichert ist ("Configuration
+# is not consistent with adapter state/backup!" - Absturzschleife, live
+# beobachtet). Genau wie bei system.conf: nur beim allerersten Mal
+# installieren, danach unangetastet lassen.
+if [[ ! -f /opt/zigbee2mqtt/data/configuration.yaml ]]; then
+  install -m 0640 \
+    "$PROJECT_ROOT/config/zigbee2mqtt.yaml" \
+    /opt/zigbee2mqtt/data/configuration.yaml
+fi
 
 # Zigbee2MQTT muss seine Konfiguration und Daten verändern können.
 chown -R littlefarmers:littlefarmers /opt/zigbee2mqtt
