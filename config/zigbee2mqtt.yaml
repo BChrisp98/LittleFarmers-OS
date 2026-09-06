@@ -27,6 +27,24 @@ frontend:
   port: 8080
   host: 127.0.0.1
 
+# Off by default in Zigbee2MQTT - turned on 2026-09-06 for the app's own
+# device-overview screen (lib/screens/device_overview_screen.dart), which
+# needs to show which devices are actually reachable right now, not just
+# which ones exist. Zigbee2MQTT periodically pings each device and
+# publishes zigbee2mqtt/<friendly_name>/availability ({"state":"online"
+# or "offline"}) - small extra radio traffic, worth it for real status
+# instead of "was it ever paired" being the only signal we had.
+#
+# NOTE: this file is only installed on a device's very first setup (see
+# install/05-services.sh's ConditionPathExists-style guard, added
+# 2026-09-06 after a config-reset crash-loop bug) - an already-deployed
+# device (like the one this was tested on the same night) needs this
+# added manually once: `echo "availability: true" | sudo tee -a
+# /opt/zigbee2mqtt/data/configuration.yaml && sudo systemctl restart
+# zigbee2mqtt`. Only relevant for existing test devices; a fresh
+# install/Golden Image gets it automatically from this file.
+availability: true
+
 advanced:
   log_level: info
   network_key: GENERATE
