@@ -211,6 +211,16 @@ def test_and_apply_credentials(ssid: str, passphrase: str) -> None:
     experience and some BLE stacks time the write out anyway."""
     state.set_status("connecting", ssid)
 
+    # Delete any existing connection profile with this exact name first.
+    # Found live 2026-09-06: without this, `nmcli device wifi connect`
+    # reuses a pre-existing profile of the same name instead of creating a
+    # fresh one - if that old profile is stale/incomplete (e.g. left over
+    # from earlier manual testing on this branch's Pi), nmcli fails with
+    # "802-11-wireless-security.key-mgmt: property is missing" instead of
+    # ever attempting to connect. Same root cause and fix as the
+    # wifi-connect-era hotspot code hit earlier in this project's history.
+    subprocess.run(["nmcli", "connection", "delete", ssid], capture_output=True, timeout=15)
+
     cmd = ["nmcli", "device", "wifi", "connect", ssid]
     if passphrase:
         cmd += ["password", passphrase]
