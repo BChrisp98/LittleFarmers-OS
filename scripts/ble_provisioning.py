@@ -69,6 +69,15 @@ CUSTOMER_WIFI_CONN_NAME = "Customer-WiFi"
 OFFLINE_TIMEOUT = 120  # seconds of no internet before BLE advertising starts
 WIFI_RECHECK_INTERVAL = 30  # seconds between "is the known WiFi back?" checks
 CONNECTIVITY_HOST = "1.1.1.1"
+# How long to keep the BLE peripheral up after credentials are confirmed
+# working, before tearing it down - found live 2026-09-06: tearing down
+# the instant "connected" was set raced the phone's own final GATT read
+# (DEVICE_CODE, needed to finish the account-pairing step on the app
+# side), leaving the app stuck waiting on a connection that had already
+# been closed. Generous on purpose - a few seconds too long here just
+# means the SSID stays visible a moment longer, not a real cost; too
+# short reintroduces the exact bug this is fixing.
+CONNECTED_GRACE_PERIOD = 15
 
 
 def log(msg: str) -> None:
@@ -182,6 +191,7 @@ class ProvisioningState:
     def __init__(self):
         self.lock = threading.Lock()
         self.status = {"state": "idle", "detail": ""}
+        self.connected_since: float | None = None
         # The actual localGATT.Characteristic object for STATUS, set by
         # build_peripheral() once it exists - set_status() needs this to
         # push a real notify event (via its set_value(), which internally
@@ -195,6 +205,8 @@ class ProvisioningState:
     def set_status(self, state: str, detail: str = "") -> None:
         with self.lock:
             self.status = {"state": state, "detail": detail}
+            if state == "connected":
+                self.connected_since = time.monotonic()
             char = self.status_characteristic
         log(f"Status: {state} {detail}".strip())
         if char is not None:
@@ -349,12 +361,30 @@ def run_provisioning() -> None:
     # (GLib.MainLoop.quit() is documented thread-safe), to end publish()
     # and return control to run_provisioning's caller.
     def recheck_loop():
+        last_internet_check = time.monotonic()
         while True:
-            time.sleep(WIFI_RECHECK_INTERVAL)
+            time.sleep(1)
+
             with state.lock:
-                current_state = state.status["state"]
-            if current_state == "connected" or internet_available():
-                log("WLAN wieder da / Zugangsdaten bestaetigt - beende BLE-Advertising.")
+                connected_since = state.connected_since
+
+            if connected_since is not None:
+                # Credentials already confirmed working - just wait out
+                # the grace period (see CONNECTED_GRACE_PERIOD) instead of
+                # the normal "is the old WiFi back" polling below, so the
+                # phone has time to finish reading DEVICE_CODE and
+                # disconnect on its own.
+                if time.monotonic() - connected_since >= CONNECTED_GRACE_PERIOD:
+                    log("Zugangsdaten bestaetigt, Wartezeit vorbei - beende BLE-Advertising.")
+                    periph.mainloop.quit()
+                    return
+                continue
+
+            if time.monotonic() - last_internet_check < WIFI_RECHECK_INTERVAL:
+                continue
+            last_internet_check = time.monotonic()
+            if internet_available():
+                log("WLAN wieder da - beende BLE-Advertising.")
                 periph.mainloop.quit()
                 return
 
