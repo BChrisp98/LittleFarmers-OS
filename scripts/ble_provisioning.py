@@ -295,7 +295,35 @@ def device_code_read_cb():
 
 # --- Main provisioning lifecycle ------------------------------------------
 
+def ensure_bluetooth_adapter_ready(attempts: int = 5, delay: float = 3.0) -> None:
+    """Found live 2026-09-12: after a reboot, hci0 sometimes comes up as a
+    raw kernel device with a null address (00:00:00:00:00:00) and stays
+    DOWN - bluetoothd apparently enumerates adapters once at its own
+    startup and, if the chip's firmware/interface isn't fully ready yet at
+    that exact moment (a boot-order race, same general class of problem
+    this project has hit repeatedly with other interfaces), never picks
+    it up afterwards even once it does come up. bluezero's
+    adapter.Adapter.available() then raises "No Bluetooth adapter found"
+    and the whole service crash-loops forever - a customer would never
+    get a working setup hotspot from a device that happened to hit this
+    on its one and only boot.
+
+    `sudo hciconfig hci0 up` fixed it instantly by hand - this does the
+    same via subprocess before every attempt to build the peripheral,
+    with a few retries since the interface can take a few seconds to
+    actually appear after boot.
+    """
+    for attempt in range(1, attempts + 1):
+        subprocess.run(["rfkill", "unblock", "bluetooth"], capture_output=True)
+        result = subprocess.run(["hciconfig", "hci0", "up"], capture_output=True, text=True)
+        if result.returncode == 0:
+            return
+        log(f"Bluetooth-Adapter noch nicht bereit (Versuch {attempt}/{attempts}): {result.stderr.strip()}")
+        time.sleep(delay)
+
+
 def build_peripheral(local_name: str) -> "peripheral.Peripheral":
+    ensure_bluetooth_adapter_ready()
     adapter_address = list(adapter.Adapter.available())[0].address
     periph = peripheral.Peripheral(adapter_address, local_name=local_name)
 
