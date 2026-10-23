@@ -33,7 +33,7 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
 fi
 source "$CONFIG_FILE"
 
-BACKEND_URL="${BACKEND_URL:-http://18.159.76.112:8000}"
+BACKEND_URL="${BACKEND_URL:-https://api.littlefarmers-shop.com}"
 PAIR_POLL_INTERVAL="${PAIR_POLL_INTERVAL:-5}"
 
 log_message() {
@@ -102,12 +102,17 @@ while true; do
     continue
   fi
   mqtt_port="${mqtt_port:-1883}"
+  # Port 8883 = verschluesselter Broker-Zugang (TLS), 1883 = unverschluesselt.
+  mqtt_scheme="mqtt"
+  if [[ "$mqtt_port" == "8883" ]]; then
+    mqtt_scheme="mqtts"
+  fi
 
   log_message "Zugangsdaten erhalten - schreibe Zigbee2MQTT-Konfiguration neu (Broker: $mqtt_host:$mqtt_port, Namensraum: ${mqtt_base_topic:-zigbee2mqtt})."
 
   cp "$ZIGBEE_CONFIG" "$ZIGBEE_CONFIG.bak"
   sed -i \
-    -e "s|^\(\s*server:\).*|\1 mqtt://$mqtt_host:$mqtt_port|" \
+    -e "s|^\(\s*server:\).*|\1 $mqtt_scheme://$mqtt_host:$mqtt_port|" \
     -e "s|^\(\s*base_topic:\).*|\1 ${mqtt_base_topic:-zigbee2mqtt}|" \
     "$ZIGBEE_CONFIG"
   # user/password sind in einer frischen Zigbee2MQTT-Konfiguration noch
@@ -118,7 +123,7 @@ while true; do
   fi
 
   sed -i \
-    -e "s|^MQTT_SERVER=.*|MQTT_SERVER=\"mqtt://$mqtt_host:$mqtt_port\"|" \
+    -e "s|^MQTT_SERVER=.*|MQTT_SERVER=\"$mqtt_scheme://$mqtt_host:$mqtt_port\"|" \
     -e "s|^MQTT_BASE_TOPIC=.*|MQTT_BASE_TOPIC=\"${mqtt_base_topic:-zigbee2mqtt}\"|" \
     "$CONFIG_FILE"
 
