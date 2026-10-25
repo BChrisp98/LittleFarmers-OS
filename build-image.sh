@@ -76,6 +76,16 @@ network:
 EOF
 sudo cloud-init clean --logs || true
 
+# Von cloud-init/netplan erzeugte Dateien mit dem WLAN des Entwicklungsnetzes:
+# sonst verbindet sich ein frisch geflashter Pi gleich mit dem WLAN des
+# Entwicklers und startet keine Bluetooth-Einrichtung (live 2026-10-25).
+sudo rm -f /etc/netplan/90-NM-*.yaml /etc/netplan/50-cloud-init.yaml
+# Passwort-Hash des Entwicklungsgeraets sperren (firstboot.sh setzt beim Kunden ein Zufallspasswort).
+sudo sed -i 's/^\(littlefarmers:\)[^:]*:/\1!:/' /etc/shadow
+# Hostname-Rest aus der Entwicklung
+sudo sed -i 's/lf-test[0-9]*/littlefarmers/g' /etc/hosts
+sudo rm -f /var/lib/NetworkManager/*.state
+
 # Kunden bekommen eine schlanke Oberflaeche-lose Basis (Einrichtung per App).
 sudo systemctl set-default multi-user.target
 
