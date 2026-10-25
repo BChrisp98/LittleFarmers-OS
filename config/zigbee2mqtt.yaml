@@ -43,7 +43,11 @@ frontend:
 # /opt/zigbee2mqtt/data/configuration.yaml && sudo systemctl restart
 # zigbee2mqtt`. Only relevant for existing test devices; a fresh
 # install/Golden Image gets it automatically from this file.
-availability: true
+# Zigbee2MQTT 2.x (settings version 5) verlangt hier einen Block; das fruehere
+# "availability: true" ist ungueltig und liess es beim ersten Start des
+# frischen Pi 3 nicht starten ("availability must be object", 2026-10-25).
+availability:
+  enabled: true
 
 advanced:
   log_level: info

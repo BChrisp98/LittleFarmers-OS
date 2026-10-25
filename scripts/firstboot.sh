@@ -28,7 +28,10 @@ ssh-keygen -A
 # vor Ort, kein geteiltes Passwort uebers Netz.
 SYSTEM_USER="littlefarmers"
 if id "$SYSTEM_USER" &>/dev/null; then
-  NEW_PASSWORD="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)"
+  # Endliche Eingabe + "cut" (liest bis EOF) statt "tr </dev/urandom | head":
+  # Dort bekommt tr beim Schliessen der Pipe SIGPIPE, und mit "set -o pipefail"
+  # brach der ganze First Boot ab (live 2026-10-25, frischer Pi 3).
+  NEW_PASSWORD="$(head -c 64 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | cut -c1-20)"
   echo "${SYSTEM_USER}:${NEW_PASSWORD}" | chpasswd
   echo "$NEW_PASSWORD" > /var/lib/littlefarmers/initial-password
   chmod 0600 /var/lib/littlefarmers/initial-password
