@@ -1,0 +1,13 @@
+[Unit]
+Description=LittleFarmers: Heimnetz-Adresse fuer die App melden
+After=mosquitto.service network-online.target
+Wants=mosquitto.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/littlefarmers-announce-address.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

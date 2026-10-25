@@ -33,6 +33,10 @@ fi
 
 sudo systemctl stop littlefarmers-wifi-fallback.service || true
 sudo systemctl stop zigbee2mqtt.service || true
+# Shelly-Bridge: enthaelt das MQTT-Passwort dieses Entwicklungsgeraets, dazu gemerkte
+# Nachrichten (Heimnetz-Adresse, Shelly-Zustaende). Beim Kunden entsteht beides neu.
+sudo systemctl stop littlefarmers-announce.service mosquitto.service || true
+sudo rm -f /etc/mosquitto/conf.d/littlefarmers-bridge.conf /var/lib/mosquitto/mosquitto.db
 
 # Zigbee-Netz dieses Entwicklungsgeraets entfernen: Netzwerkschluessel,
 # Geraete, Backup. Sonst haetten ALLE Kunden dasselbe Funknetz und denselben

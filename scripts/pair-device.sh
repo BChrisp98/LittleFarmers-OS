@@ -128,6 +128,8 @@ while true; do
     "$CONFIG_FILE"
 
   systemctl restart zigbee2mqtt.service
+  # Shelly: Bridge vom lokalen Broker zum Server mit den neuen Zugangsdaten
+  /usr/local/bin/littlefarmers-shelly-bridge.sh || true
 
   touch "$MARKER"
   log_message "Kopplung abgeschlossen, Zigbee2MQTT neu gestartet."

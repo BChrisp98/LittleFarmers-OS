@@ -11,6 +11,7 @@ sudo bash "$PROJECT_ROOT/install/03-zigbee2mqtt.sh"
 sudo bash "$PROJECT_ROOT/install/04-setup-portal.sh"
 sudo bash "$PROJECT_ROOT/install/06-ble-provisioning.sh"
 sudo bash "$PROJECT_ROOT/install/05-services.sh"
+sudo bash "$PROJECT_ROOT/install/07-shelly-bridge.sh" || echo "WARNUNG: Shelly-Unterstuetzung konnte nicht installiert werden - Zigbee ist davon nicht betroffen."
 
 # --no-block: Beim Self-Update im ersten Start (Before=zigbee2mqtt) wuerde ein
 # normales "restart" auf das Ende des Self-Updates warten, waehrend dieses auf
